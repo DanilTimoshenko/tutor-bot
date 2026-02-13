@@ -8,7 +8,7 @@ from datetime import time as dt_time
 from telegram import BotCommand
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
-import config
+from config_loader import config
 import database as db
 import handlers as h
 
