@@ -20,7 +20,28 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    app = Application.builder().token(config.BOT_TOKEN).build()
+    import re
+    token = (config.BOT_TOKEN or "").strip()
+    if not token:
+        raise SystemExit(
+            "Ошибка: BOT_TOKEN не задан. На Railway: сервис tutor-bot → Variables → "
+            "добавь BOT_TOKEN (токен от @BotFather)."
+        )
+    # Формат токена Telegram: 123456789:ABCdef...
+    if not re.match(r"^\d+:[A-Za-z0-9_-]{35,}$", token):
+        raise SystemExit(
+            "Ошибка: BOT_TOKEN не похож на токен от @BotFather (должен быть вида 123456789:AAH...). "
+            "Проверь переменную BOT_TOKEN в Railway Variables — скопируй токен целиком, без пробелов."
+        )
+    try:
+        app = Application.builder().token(token).build()
+    except Exception as e:
+        if "InvalidToken" in type(e).__name__ or "token" in str(e).lower():
+            raise SystemExit(
+                "Ошибка: Telegram не принял токен. Проверь в Railway Variables: "
+                "имя переменной точно BOT_TOKEN, значение скопировано из @BotFather целиком (без кавычек и пробелов)."
+            ) from e
+        raise
     app.bot_data["tutor_user_id"] = config.TUTOR_USER_ID
     app.bot_data["bot_title"] = getattr(config, "BOT_TITLE", None)
     app.bot_data["materials_channel_link"] = getattr(config, "MATERIALS_CHANNEL_LINK", None)
