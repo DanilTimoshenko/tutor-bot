@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tutorbot</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/apple/MyNewProject/.venv/bin/python</string>
+        <string>/Users/apple/MyNewProject/main.py</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/apple/MyNewProject</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/apple/MyNewProject/bot.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/apple/MyNewProject/bot.log</string>
+</dict>
+</plist>

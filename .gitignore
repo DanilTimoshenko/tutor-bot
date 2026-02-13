@@ -1,0 +1,9 @@
+config.py
+tutor_bot.db
+bot.log
+bot.pid
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env

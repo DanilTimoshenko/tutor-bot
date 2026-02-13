@@ -1,0 +1,14 @@
+[Unit]
+Description=Telegram Tutor Bot
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/tutor-bot
+ExecStart=/root/tutor-bot/.venv/bin/python main.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,1176 @@
+"""
+Обработчики команд и кнопок бота.
+"""
+import logging
+import re
+from datetime import datetime, timedelta
+
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ContextTypes
+
+import database as db
+
+logger = logging.getLogger(__name__)
+
+# Ключи пошаговых диалогов — при старте одного сбрасываем остальные, чтобы не «подхватывать» сообщения
+FLOW_KEYS = ("add_lesson", "block_slot", "request_slot", "schedule_range_input")
+
+
+def _clear_other_flows(context: ContextTypes.DEFAULT_TYPE, keep: str) -> None:
+    """Сбрасывает все пошаговые диалоги, кроме keep. Тогда после «нет»/«спасибо» бот не уйдёт в старый сценарий."""
+    for key in FLOW_KEYS:
+        if key != keep:
+            context.user_data.pop(key, None)
+
+
+def is_tutor(user_id: int, tutor_user_id: int) -> bool:
+    """Только этот пользователь — репетитор; все остальные — ученики."""
+    return user_id == tutor_user_id
+
+
+MSG_ONLY_TUTOR = "Вы зашли как ученик. Команды репетитора доступны только автору бота. Используйте /lessons и /my."
+
+
+def format_lesson(lesson: dict, with_id: bool = False) -> str:
+    parts = [
+        f"▫️ {lesson['title']}",
+        f"   📅 {lesson['lesson_date']}  ·  🕐 {lesson['lesson_time']}",
+        f"   ⏱ {lesson.get('duration_minutes', 60)} мин",
+    ]
+    desc = lesson.get("description") or ""
+    if desc.strip():
+        parts.append(f"   📝 {desc.strip()}")
+    if with_id:
+        parts.append(f"   🆔 {lesson['id']}")
+    booked = lesson.get("booked_count")
+    if booked is not None:
+        parts.append(f"   👥 записано: {booked}/{lesson.get('max_students', 1)}")
+    return "\n".join(parts)
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    title = context.bot_data.get("bot_title") or "Репетитор"
+    text = (
+        f"👋 Привет, {user.first_name or 'друг'}!\n\n"
+        f"Я бот записи на уроки — {title}.\n\n"
+        "Выберите действие:"
+    )
+    if is_tutor(user.id, context.bot_data["tutor_user_id"]):
+        text += (
+            "\n\n━━━━━━━━━━━━━━━━━━━━\n"
+            "👩‍🏫 Режим репетитора"
+        )
+        keyboard = [
+            [InlineKeyboardButton("✏️ Создать урок", callback_data="tutor_add_lesson")],
+            [InlineKeyboardButton("📅 Расписание", callback_data="tutor_schedule")],
+            [InlineKeyboardButton("📊 Сводка на завтра", callback_data="tutor_summary")],
+            [InlineKeyboardButton("👀 Как видят ученики", callback_data="tutor_preview_student")],
+            [InlineKeyboardButton("💬 Как очистить чат", callback_data="tutor_clear_chat_help")],
+        ]
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+    # Кнопки для учеников
+    keyboard = [
+        [InlineKeyboardButton("📅 Записаться на урок", callback_data="student_lessons")],
+        [InlineKeyboardButton("📌 Мои записи и слоты", callback_data="student_my")],
+        [InlineKeyboardButton("🕐 Записаться на свободное время", callback_data="student_freetime")],
+        [InlineKeyboardButton("👤 Репетитор", callback_data="student_tutor")],
+    ]
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def materials_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Ссылка на канал с материалами (если настроен репетитором)."""
+    link = context.bot_data.get("materials_channel_link")
+    if link:
+        await update.message.reply_text(
+            "📚 Материалы к урокам\n\n"
+            "Здесь можно смотреть конспекты и доп. материалы:\n\n"
+            f"👉 {link}",
+        )
+    else:
+        await update.message.reply_text("Ссылка на материалы пока не добавлена.")
+
+
+async def request_slot_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработка ввода даты/времени для «Свободное время»."""
+    data = context.user_data.get("request_slot")
+    if not data:
+        return False
+    text = update.message.text.strip()
+    step = data.get("step")
+    user = update.effective_user
+    tutor_id = context.bot_data["tutor_user_id"]
+
+    if step == "date":
+        date = parse_date(text)
+        if not date:
+            await update.message.reply_text("❌ Неверный формат. Пример: 20.02.2025 или 2025-02-20")
+            return True
+        data["date"] = date
+        data["step"] = "time"
+        await update.message.reply_text("Напиши удобное время (например 14:00):")
+        return True
+
+    if step == "time":
+        time = parse_time(text)
+        if not time:
+            await update.message.reply_text("❌ Неверный формат. Пример: 14:00")
+            return True
+        data["time"] = time
+        context.user_data.pop("request_slot", None)
+        student_name = user.first_name or user.username or f"ID{user.id}"
+        req = (
+            "🕐 Запрос на свободное время\n\n"
+            f"👤 {student_name}"
+        )
+        if user.username:
+            req += f" @{user.username}"
+        req += f"\n\nЖелаемые дата и время: {data['date']} в {data['time']}\n\nСоздайте урок в /add_lesson — тогда он появится у ученика в «Записаться на урок»."
+        try:
+            await context.bot.send_message(chat_id=tutor_id, text=req)
+        except Exception:
+            pass
+        await update.message.reply_text(
+            "✅ Запрос отправлен репетитору.\n\n"
+            "Когда урок будет создан, он появится в разделе «Записаться на урок» — зайди туда и запишись.",
+        )
+        return True
+    return False
+
+
+async def clear_chat_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Подсказка, как очистить чат с ботом (бот не может удалить сообщения сам)."""
+    await update.message.reply_text(
+        "💬 Как очистить чат с ботом\n\n"
+        "Бот не может удалить сообщения за вас. Сделайте так:\n\n"
+        "• **iPhone/Android:** откройте чат с ботом → нажмите на название бота вверху → «Очистить историю» или «Удалить чат».\n\n"
+        "• **Telegram Desktop:** правый клик по чату → «Очистить историю».",
+    )
+
+
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(
+        "📖 Как записаться на урок\n\n"
+        "1️⃣ Нажми /lessons\n"
+        "2️⃣ Выбери урок и нажми кнопку под ним\n"
+        "3️⃣ Готово — ты записан\n\n"
+        "❌ Отменить запись: /my → выбери урок → «Отменить запись»\n\n"
+        "📚 Материалы к урокам: /materials",
+    )
+
+
+async def lessons_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    lessons = await db.get_upcoming_lessons()
+    if not lessons:
+        await update.message.reply_text(
+            "📭 Пока нет доступных уроков.\n\n"
+            "Следи за обновлениями — новые слоты появятся здесь.",
+        )
+        return
+    text = "📋 Доступные уроки\n\nВыбери урок и нажми кнопку записи:\n\n" + "\n\n".join(format_lesson(l) for l in lessons)
+    keyboard = []
+    for l in lessons:
+        booked = l.get("booked_count", 0)
+        max_s = l.get("max_students", 1)
+        if booked < max_s:
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"✏️ Записаться · {l['title']} ({l['lesson_date']} {l['lesson_time']})",
+                    callback_data=f"book_{l['id']}",
+                )
+            ])
+    if not keyboard:
+        await update.message.reply_text(text)
+        return
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(text, reply_markup=reply_markup)
+
+
+async def _build_my_bookings_message(user_id: int, username: str):
+    """Возвращает (text, keyboard) для «Мои записи» ученика."""
+    bookings = await db.get_my_bookings(user_id)
+    assigned_slots = await db.get_blocked_slots_for_student(username) if username else []
+    if not bookings and not assigned_slots:
+        return None, None
+    text = "📌 Ваши записи\n\n"
+    keyboard = []
+    if bookings:
+        text += "Уроки:\n\n" + "\n\n".join(format_lesson(l) for l in bookings) + "\n\n"
+        for l in bookings:
+            keyboard.append([
+                InlineKeyboardButton(f"❌ Отменить урок · {l['title']} ({l['lesson_date']})", callback_data=f"cancel_{l['id']}"),
+            ])
+    if assigned_slots:
+        text += "🔒 Закреплённые за вами слоты (репетитор назначил вам это время):\n\n"
+        for s in assigned_slots:
+            day = DAY_NAMES[s["day_of_week"]]
+            text += f"   • {day} {s['lesson_time']} — {s['student_name']}\n"
+        text += "\n"
+        for s in assigned_slots:
+            day = DAY_NAMES[s["day_of_week"]]
+            keyboard.append([
+                InlineKeyboardButton(f"🔓 Отменить слот · {day} {s['lesson_time']}", callback_data=f"student_unblock_{s['id']}"),
+            ])
+    return text.strip(), InlineKeyboardMarkup(keyboard)
+
+
+async def my_bookings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    username = (update.effective_user.username or "").strip()
+    text, reply_markup = await _build_my_bookings_message(user_id, username)
+    if text is None:
+        await update.message.reply_text(
+            "📌 У вас пока нет записей.\n\n"
+            "Нажми /lessons или кнопку «Записаться на урок», чтобы записаться.",
+        )
+        return
+    await update.message.reply_text(text, reply_markup=reply_markup)
+
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    data = query.data or ""
+    user_id = query.from_user.id
+    tutor_id = context.bot_data["tutor_user_id"]
+
+    try:
+        await query.answer()
+    except Exception as e:
+        logger.warning("query.answer failed: %s", e)
+
+    try:
+        if data == "student_lessons":
+            lessons = await db.get_upcoming_lessons()
+            if not lessons:
+                await query.edit_message_text(
+                    "📭 Пока нет доступных уроков.\n\nСледи за обновлениями — новые слоты появятся здесь.",
+                )
+                return
+            text = "📋 Доступные уроки\n\nВыбери урок и нажми кнопку записи:\n\n" + "\n\n".join(format_lesson(l) for l in lessons)
+            keyboard = []
+            for l in lessons:
+                booked = l.get("booked_count", 0)
+                max_s = l.get("max_students", 1)
+                if booked < max_s:
+                    keyboard.append([
+                        InlineKeyboardButton(
+                            f"✏️ Записаться · {l['title']} ({l['lesson_date']} {l['lesson_time']})",
+                            callback_data=f"book_{l['id']}",
+                        )
+                    ])
+            if keyboard:
+                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+            else:
+                await query.edit_message_text(text)
+
+        elif data == "student_my":
+            user_id = query.from_user.id
+            username = (query.from_user.username or "").strip()
+            text, reply_markup = await _build_my_bookings_message(user_id, username)
+            if text is None:
+                await query.edit_message_text(
+                    "📌 У вас пока нет записей.\n\n"
+                    "Нажми «Записаться на урок», чтобы выбрать урок и записаться.",
+                )
+                return
+            await query.edit_message_text(text, reply_markup=reply_markup)
+
+        elif data == "student_tutor":
+            title = context.bot_data.get("bot_title") or "Репетитор"
+            msg = f"👤 Репетитор\n\nЗанятия ведёт: {title}."
+            if context.bot_data.get("materials_channel_link"):
+                msg += f"\n\n📚 Материалы: /materials"
+            await query.edit_message_text(msg)
+
+        elif data == "student_freetime":
+            _clear_other_flows(context, "request_slot")
+            context.user_data["request_slot"] = {"step": "date"}
+            await query.edit_message_text(
+                "🕐 Запись на свободное время\n\n"
+                "Напиши желаемую дату урока в формате 20.02.2025 или 2025-02-20:",
+            )
+
+        elif data == "tutor_add_lesson":
+            if not is_tutor(user_id, tutor_id):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            _clear_other_flows(context, "add_lesson")
+            context.user_data["add_lesson"] = {"step": "title"}
+            await query.edit_message_text(
+                "✏️ Создание урока\n\n"
+                "Шаг 1/7 · Название\n"
+                "Напиши название урока, например:\n"
+                "Математика, 8 класс",
+            )
+
+        elif data == "tutor_schedule":
+            if not is_tutor(user_id, tutor_id):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            text, reply_markup = await _build_schedule_message(context)
+            await query.edit_message_text(text, reply_markup=reply_markup)
+
+        elif data == "tutor_schedule_set_range":
+            if not is_tutor(user_id, tutor_id):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            _clear_other_flows(context, "schedule_range_input")
+            context.user_data["schedule_range_input"] = {"step": "from"}
+            await query.edit_message_text(
+                "📅 Показать расписание за период\n\n"
+                "Шаг 1/2 · Начальная дата (ДД.ММ.ГГГГ или 20.02.2025):",
+            )
+
+        elif data == "tutor_schedule_clear_range":
+            if not is_tutor(user_id, tutor_id):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            try:
+                context.user_data.pop("schedule_range", None)
+                text, reply_markup = await _build_schedule_message(context)
+                if len(text) > 4090:
+                    text = text[:4080] + "\n\n… (много уроков — задайте период)"
+                await query.edit_message_text(text, reply_markup=reply_markup)
+            except Exception as e:
+                logger.exception("tutor_schedule_clear_range: %s", e)
+                try:
+                    context.user_data.pop("schedule_range", None)
+                    text, reply_markup = await _build_schedule_message(context)
+                    await query.message.reply_text(
+                        text[:4090] if len(text) > 4090 else text,
+                        reply_markup=reply_markup,
+                    )
+                except Exception:
+                    await query.edit_message_text(
+                        "Период сброшен. Нажмите «Расписание» в меню или /schedule.",
+                    )
+
+        elif data == "tutor_summary":
+            if not is_tutor(user_id, tutor_id):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            lessons = await db.get_lessons_on_date(tomorrow)
+            await query.edit_message_text(_format_summary(tomorrow, lessons))
+
+        elif data == "tutor_clear_schedule":
+            if not is_tutor(user_id, tutor_id):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            keyboard = [
+                [InlineKeyboardButton("✅ Подтвердить", callback_data="tutor_clear_schedule_confirm")],
+                [InlineKeyboardButton("❌ Отмена", callback_data="tutor_clear_schedule_cancel")],
+            ]
+            await query.edit_message_text(
+                "🗑 Очистить всё расписание?\n\n"
+                "Будут удалены все уроки, все записи и все занятые слоты. Это нельзя отменить.",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+
+        elif data == "tutor_clear_schedule_confirm":
+            if not is_tutor(user_id, tutor_id):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            lesson_ids = await db.get_all_lesson_ids()
+            jq = context.application.job_queue
+            if jq and jq.scheduler:
+                for lid in lesson_ids:
+                    for name in (f"remind_1d_{lid}", f"remind_1h_{lid}"):
+                        try:
+                            jq.scheduler.remove_job(name)
+                        except Exception:
+                            pass
+            n_lessons, n_slots = await db.clear_all_schedule()
+            text, reply_markup = await _build_schedule_message(context)
+            await query.edit_message_text(
+                f"✅ Очищено: уроков {n_lessons}, слотов {n_slots}.\n\n" + text,
+                reply_markup=reply_markup,
+            )
+
+        elif data == "tutor_clear_chat_help":
+            if not is_tutor(user_id, tutor_id):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            await query.answer()
+            await query.message.reply_text(
+                "💬 Как очистить чат с ботом\n\n"
+                "Бот не может удалить сообщения за вас. Сделайте так:\n\n"
+                "• iPhone/Android: откройте чат с ботом → нажмите на название бота вверху → «Очистить историю» или «Удалить чат».\n\n"
+                "• Telegram Desktop: правый клик по чату → «Очистить историю».",
+            )
+
+        elif data == "tutor_clear_schedule_cancel":
+            if not is_tutor(user_id, tutor_id):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            await _refresh_schedule_message(query, context)
+
+        elif data == "tutor_block_slot":
+            if not is_tutor(user_id, tutor_id):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            # Не сбрасывать диалог, если уже идёт — иначе случайное нажатие кнопки обнуляет ввод
+            if context.user_data.get("block_slot"):
+                step = context.user_data["block_slot"].get("step", "")
+                next_hint = {"name": "имя ученика", "day": "день (пн, вт...)", "time": "время (19:00)", "username": "@username или минус", "more_slot": "да или нет"}.get(step, "следующий шаг")
+                await query.answer()
+                await query.edit_message_text(
+                    "🔒 Вы уже закрепляете слот.\n\n"
+                    f"Продолжайте ввод ({next_hint}) или напишите «отмена», чтобы выйти.",
+                )
+                return
+            _clear_other_flows(context, "block_slot")
+            context.user_data["block_slot"] = {"step": "name"}
+            await query.edit_message_text(
+                "🔒 Закрепить слот за учеником\n\n"
+                "Шаг 1/4 · Имя ученика (как запомнить слот):",
+            )
+
+        elif data.startswith("unblock_"):
+            if not is_tutor(user_id, tutor_id):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            slot_id = int(data.split("_")[1])
+            ok = await db.delete_blocked_slot(slot_id)
+            if ok:
+                await _refresh_schedule_message(query, context)
+            else:
+                await query.edit_message_text("Не удалось снять слот.")
+
+        elif data == "tutor_preview_student":
+            if not is_tutor(user_id, tutor_id):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            title = context.bot_data.get("bot_title") or "Репетитор"
+            preview_text = (
+                "👋 Привет, друг!\n\n"
+                f"Я бот записи на уроки — {title}.\n\n"
+                "Выберите действие:"
+            )
+            keyboard = [
+                [InlineKeyboardButton("📅 Записаться на урок", callback_data="student_lessons")],
+                [InlineKeyboardButton("📌 Мои записи и слоты", callback_data="student_my")],
+                [InlineKeyboardButton("🕐 Записаться на свободное время", callback_data="student_freetime")],
+                [InlineKeyboardButton("👤 Репетитор", callback_data="student_tutor")],
+            ]
+            await query.message.reply_text(
+                "👀 Так видят ученики:\n━━━━━━━━━━━━━━━━━━━━",
+            )
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=preview_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+
+        elif data.startswith("book_"):
+            lesson_id = int(data.split("_")[1])
+            ok, msg = await db.book_lesson(
+                lesson_id,
+                user_id,
+                username=query.from_user.username,
+                first_name=query.from_user.first_name,
+            )
+            await query.edit_message_text(msg)
+            if ok:
+                lesson = await db.get_lesson(lesson_id)
+                if lesson:
+                    student_name = query.from_user.first_name or query.from_user.username or f"ID{user_id}"
+                    notify = (
+                        "🔔 Новая запись на урок\n\n"
+                        f"👤 {student_name}"
+                    )
+                    if query.from_user.username:
+                        notify += f" @{query.from_user.username}"
+                    notify += f"\n\n▫️ {lesson['title']}\n📅 {lesson['lesson_date']}  ·  🕐 {lesson['lesson_time']}"
+                    try:
+                        await context.bot.send_message(chat_id=tutor_id, text=notify)
+                    except Exception:
+                        pass
+
+        elif data.startswith("student_unblock_"):
+            slot_id = int(data.split("_")[2])
+            slot = await db.get_blocked_slot_by_id(slot_id)
+            if not slot:
+                await query.edit_message_text("Слот уже снят.")
+                return
+            student_username = (slot.get("student_username") or "").strip().lower()
+            my_username = (query.from_user.username or "").strip().lower()
+            if student_username and student_username != my_username:
+                await query.edit_message_text("Этот слот закреплён за другим учеником.")
+                return
+            await db.delete_blocked_slot(slot_id)
+            username = (query.from_user.username or "").strip()
+            text, reply_markup = await _build_my_bookings_message(user_id, username)
+            if text is None:
+                await query.edit_message_text(
+                    "✅ Слот отменён.\n\n📌 У вас больше нет записей. Нажми «Записаться на урок» или /lessons.",
+                )
+                return
+            await query.edit_message_text("✅ Слот отменён.\n\n" + text, reply_markup=reply_markup)
+
+        elif data.startswith("cancel_"):
+            lesson_id = int(data.split("_")[1])
+            ok, msg = await db.cancel_booking(lesson_id, user_id)
+            await query.edit_message_text(msg)
+
+        elif data.startswith("tutor_bookings_"):
+            lesson_id = int(data.split("_")[2])
+            if not is_tutor(user_id, tutor_id):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            bookings = await db.get_bookings_for_lesson(lesson_id)
+            if not bookings:
+                text = "👥 На этот урок пока никто не записан."
+            else:
+                lines = [f"   • {b.get('first_name') or b.get('username') or 'ID' + str(b['user_id'])} (id {b['user_id']})" for b in bookings]
+                text = "👥 Кто записан\n\n" + "\n".join(lines)
+            await query.edit_message_text(text)
+
+        elif data.startswith("tutor_del_"):
+            lesson_id = int(data.split("_")[2])
+            if not is_tutor(user_id, tutor_id):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            ok, lesson, user_ids = await db.delete_lesson(lesson_id)
+            if ok and lesson:
+                cancel_text = (
+                    f"❌ Урок отменён\n\n"
+                    f"▫️ {lesson['title']}\n"
+                    f"📅 {lesson['lesson_date']}  ·  🕐 {lesson['lesson_time']}"
+                )
+                for uid in user_ids:
+                    try:
+                        await context.bot.send_message(chat_id=uid, text=cancel_text)
+                    except Exception:
+                        pass
+                jq = context.application.job_queue
+                if jq and jq.scheduler:
+                    for name in (f"remind_1d_{lesson_id}", f"remind_1h_{lesson_id}"):
+                        try:
+                            jq.scheduler.remove_job(name)
+                        except Exception:
+                            pass
+            await query.edit_message_text("✅ Урок удалён." if ok else "❌ Не удалось удалить.")
+
+        else:
+            logger.warning("Unknown callback_data: %r", data)
+            try:
+                await query.edit_message_text("Неизвестная кнопка. Нажмите /start")
+            except Exception:
+                pass
+
+    except Exception as e:
+        logger.exception("Callback error: %s", e)
+        try:
+            await query.edit_message_text("Произошла ошибка. Попробуйте /start")
+        except Exception:
+            pass
+
+
+# ——— Репетитор: добавить урок ———
+
+def parse_date(s: str) -> str | None:
+    """Принимает YYYY-MM-DD или DD.MM.YYYY."""
+    s = s.strip()
+    if re.match(r"\d{4}-\d{2}-\d{2}", s):
+        return s
+    m = re.match(r"(\d{1,2})\.(\d{1,2})\.(\d{4})", s)
+    if m:
+        d, mo, y = m.groups()
+        return f"{y}-{int(mo):02d}-{int(d):02d}"
+    return None
+
+
+def parse_time(s: str) -> str | None:
+    """Принимает HH:MM или H:MM."""
+    m = re.match(r"(\d{1,2}):(\d{2})", s.strip())
+    if m:
+        h, mi = int(m.group(1)), int(m.group(2))
+        if 0 <= h <= 23 and 0 <= mi <= 59:
+            return f"{h:02d}:{mi:02d}"
+    return None
+
+
+def _normalize_slot_time(t: str) -> str:
+    """Единый формат времени для группировки слотов (20:00 и 20:00 — один ключ)."""
+    if not t:
+        return t
+    parsed = parse_time(t)
+    return parsed if parsed else t.strip()
+
+
+def parse_max_students(s: str) -> int | None:
+    """Число от 1 до 100."""
+    try:
+        n = int(s.strip())
+        if 1 <= n <= 100:
+            return n
+    except ValueError:
+        pass
+    return None
+
+
+DAY_NAMES = ("пн", "вт", "ср", "чт", "пт", "сб", "вс")
+DAY_NAMES_FULL = ("понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье")
+
+
+def parse_day_of_week(s: str) -> int | None:
+    """День недели: пн/вт/.../вс или понедельник/... или 0-6. Возвращает 0=пн..6=вс."""
+    t = s.strip().lower()
+    for i, short in enumerate(DAY_NAMES):
+        if t == short or t == DAY_NAMES_FULL[i]:
+            return i
+    try:
+        n = int(t)
+        if 0 <= n <= 6:
+            return n
+    except ValueError:
+        pass
+    return None
+
+
+async def _schedule_reminders(context: ContextTypes.DEFAULT_TYPE, lesson_id: int) -> None:
+    """Ставит напоминания за 1 день и за 1 час до урока."""
+    lesson = await db.get_lesson(lesson_id)
+    if not lesson:
+        return
+    try:
+        dt = datetime.strptime(f"{lesson['lesson_date']} {lesson['lesson_time']}", "%Y-%m-%d %H:%M")
+    except ValueError:
+        return
+    job_queue = context.application.job_queue
+    if not job_queue:
+        return
+    when_1d = dt - timedelta(days=1)
+    when_1h = dt - timedelta(hours=1)
+    if when_1d > datetime.now():
+        job_queue.run_once(
+            _reminder_callback,
+            when_1d,
+            data={"lesson_id": lesson_id, "kind": "1day"},
+            name=f"remind_1d_{lesson_id}",
+        )
+    if when_1h > datetime.now():
+        job_queue.run_once(
+            _reminder_callback,
+            when_1h,
+            data={"lesson_id": lesson_id, "kind": "1hour"},
+            name=f"remind_1h_{lesson_id}",
+        )
+
+
+async def _reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Отправляет напоминание репетитору и записанным ученикам."""
+    job = context.job
+    lesson_id = job.data.get("lesson_id")
+    kind = job.data.get("kind", "")
+    lesson = await db.get_lesson(lesson_id)
+    if not lesson:
+        return
+    tutor_id = context.bot_data.get("tutor_user_id")
+    text = (
+        f"⏰ Напоминание: через {'1 день' if kind == '1day' else '1 час'} урок\n\n"
+        f"▫️ {lesson['title']}\n"
+        f"📅 {lesson['lesson_date']}  ·  🕐 {lesson['lesson_time']}"
+    )
+    try:
+        await context.bot.send_message(chat_id=tutor_id, text=text)
+    except Exception:
+        pass
+    bookings = await db.get_bookings_for_lesson(lesson_id)
+    for b in bookings:
+        try:
+            await context.bot.send_message(chat_id=b["user_id"], text=text)
+        except Exception:
+            pass
+
+
+async def _post_lesson_to_channel(context: ContextTypes.DEFAULT_TYPE, lesson: dict, bot_username: str) -> None:
+    """Постит анонс урока в канал."""
+    channel_id = context.bot_data.get("channel_id")
+    if not channel_id or not bot_username:
+        return
+    link = f"https://t.me/{bot_username.lstrip('@')}"
+    text = (
+        f"📚 Новый урок\n\n"
+        f"▫️ {lesson['title']}\n"
+        f"📅 {lesson['lesson_date']}  ·  🕐 {lesson['lesson_time']}\n\n"
+        f"Записаться: {link}"
+    )
+    try:
+        await context.bot.send_message(chat_id=channel_id, text=text)
+    except Exception:
+        pass
+
+
+async def _send_confirm_summary(update: Update, context: ContextTypes.DEFAULT_TYPE, data: dict) -> None:
+    """Отправляет итоговое сообщение перед созданием урока(ов)."""
+    weeks = data.get("repeat_weeks", 1)
+    times = data.get("times") or [data["time"]]
+    summary = (
+        "✏️ Шаг 7/7 · Проверь и подтверди\n\n"
+        f"▫️ {data['title']}\n"
+        f"🕐 Время: {', '.join(times)}  ·  👥 мест: {data.get('max_students', 1)}\n"
+    )
+    if data.get("description"):
+        summary += f"📝 {data['description']}\n"
+    total = weeks * len(times)
+    if weeks >= 2 or len(times) > 1:
+        summary += f"\n📅 Будет создано уроков: {total}\n"
+    summary += f"\n📅 Дата: {data['date']}" + (f" (и ещё {weeks - 1} нед.)" if weeks > 1 else "")
+    summary += "\n\nСоздать? Напиши да или нет."
+    await update.message.reply_text(summary)
+
+
+async def _do_create_lessons(update: Update, context: ContextTypes.DEFAULT_TYPE, data: dict) -> None:
+    """Создаёт уроки по data (без проверки занятости слотов)."""
+    weeks = data.get("repeat_weeks", 1)
+    times = data.get("times") or [data["time"]]
+    base_date = datetime.strptime(data["date"], "%Y-%m-%d").date()
+    created = []
+    for i in range(weeks):
+        lesson_date = (base_date + timedelta(weeks=i)).strftime("%Y-%m-%d")
+        for t in times:
+            lesson_id = await db.add_lesson(
+                title=data["title"],
+                lesson_date=lesson_date,
+                lesson_time=t,
+                max_students=data.get("max_students", 1),
+                description=data.get("description", ""),
+            )
+            await _schedule_reminders(context, lesson_id)
+            created.append((lesson_id, lesson_date, t))
+    if context.bot_data.get("channel_id") and created:
+        lesson = await db.get_lesson(created[0][0])
+        if lesson:
+            await _post_lesson_to_channel(context, lesson, context.bot_data.get("bot_username", ""))
+    n = len(created)
+    if n == 1:
+        await update.message.reply_text(
+            f"✅ Урок создан (ID {created[0][0]}).\n\n"
+            "Ученики увидят его в /lessons и смогут записаться.",
+        )
+    else:
+        sample = ", ".join(f"{d} {t}" for _, d, t in created[:5])
+        if n > 5:
+            sample += f" … ещё {n - 5}"
+        await update.message.reply_text(
+            f"✅ Создано уроков: {n}\n\n{sample}\n\nУченики видят их в /lessons.",
+        )
+
+
+async def add_lesson_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_tutor(update.effective_user.id, context.bot_data["tutor_user_id"]):
+        await update.message.reply_text(MSG_ONLY_TUTOR)
+        return
+    _clear_other_flows(context, "add_lesson")
+    context.user_data["add_lesson"] = {"step": "title"}
+    await update.message.reply_text(
+        "✏️ Создание урока\n\n"
+        "Шаг 1/7 · Название\n"
+        "Напиши название урока, например:\n"
+        "Математика, 8 класс",
+    )
+
+
+async def add_lesson_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    if not is_tutor(user_id, context.bot_data["tutor_user_id"]):
+        return
+    data = context.user_data.get("add_lesson")
+    if not data:
+        return
+    text = update.message.text.strip()
+    step = data.get("step", "title")
+
+    if step == "title":
+        data["title"] = text
+        data["step"] = "date"
+        await update.message.reply_text(
+            "✏️ Шаг 2/7 · Дата\n\n"
+            "Напиши дату в формате 20.02.2025 или 2025-02-20",
+        )
+        return
+    if step == "date":
+        date = parse_date(text)
+        if not date:
+            await update.message.reply_text("❌ Неверный формат. Пример: 20.02.2025 или 2025-02-20")
+            return
+        data["date"] = date
+        data["step"] = "time"
+        await update.message.reply_text(
+            "✏️ Шаг 3/7 · Время\n\n"
+            "Напиши время начала, например: 14:00",
+        )
+        return
+    if step == "time":
+        time = parse_time(text)
+        if not time:
+            await update.message.reply_text("❌ Неверный формат. Пример: 14:00")
+            return
+        data["time"] = time
+        data["times"] = [time]
+        data["step"] = "more_time"
+        await update.message.reply_text(
+            "✏️ Добавить ещё время в этот же день?\n\n"
+            "Напиши ещё одно время (например 10:00) или минус (-) чтобы перейти дальше.",
+        )
+        return
+    if step == "more_time":
+        if text.strip() == "-":
+            data["step"] = "max_students"
+            await update.message.reply_text(
+                "✏️ Шаг 4/7 · Мест на урок\n\n"
+                "Сколько человек может записаться? (число от 1 до 100)",
+            )
+            return
+        time = parse_time(text)
+        if not time:
+            await update.message.reply_text("❌ Неверный формат. Пример: 10:00 или минус (-)")
+            return
+        data["times"].append(time)
+        times_str = ", ".join(data["times"])
+        await update.message.reply_text(
+            f"Время добавлено. Сейчас: {times_str}\n\n"
+            "Ещё время или минус (-) чтобы дальше:",
+        )
+        return
+    if step == "max_students":
+        n = parse_max_students(text)
+        if n is None:
+            await update.message.reply_text("❌ Введи число от 1 до 100.")
+            return
+        data["max_students"] = n
+        data["step"] = "description"
+        await update.message.reply_text(
+            "✏️ Шаг 5/7 · Описание (необязательно)\n\n"
+            "Напиши пару слов об уроке или минус (-), чтобы пропустить.",
+        )
+        return
+    if step == "description":
+        data["description"] = text if text != "-" else ""
+        data["step"] = "repeat"
+        await update.message.reply_text(
+            "✏️ Шаг 6/7 · Повторение\n\n"
+            "Повторять этот урок еженедельно? Напиши да или нет.",
+        )
+        return
+    if step == "repeat":
+        if text.lower() in ("да", "yes", "д", "y"):
+            data["step"] = "repeat_weeks"
+            await update.message.reply_text(
+                "✏️ Сколько недель подряд создать? (число от 2 до 52)\n\n"
+                "Например: 4 — получится 4 урока с шагом в неделю.",
+            )
+            return
+        data["repeat_weeks"] = 1
+        data["step"] = "confirm"
+        await _send_confirm_summary(update, context, data)
+        return
+    if step == "repeat_weeks":
+        try:
+            n = int(text.strip())
+            if 2 <= n <= 52:
+                data["repeat_weeks"] = n
+                data["step"] = "confirm"
+                await _send_confirm_summary(update, context, data)
+                return
+        except ValueError:
+            pass
+        await update.message.reply_text("❌ Введи число от 2 до 52.")
+        return
+    if step == "confirm":
+        if text.lower() in ("да", "yes", "д", "y"):
+            weeks = data.get("repeat_weeks", 1)
+            times = data.get("times") or [data["time"]]
+            base_date = datetime.strptime(data["date"], "%Y-%m-%d").date()
+            # Проверяем, есть ли закреплённые слоты на это время (несколько учеников — ок)
+            blocked_names_by_dt = []
+            for i in range(weeks):
+                d = base_date + timedelta(weeks=i)
+                for t in times:
+                    slots = await db.get_blocked_slots(d.weekday(), t)
+                    if slots:
+                        names = ", ".join(s["student_name"] for s in slots)
+                        blocked_names_by_dt.append((d.strftime("%d.%m"), t, names))
+            if blocked_names_by_dt:
+                parts = [f"{d} {t} — {names}" for d, t, names in blocked_names_by_dt[:5]]
+                msg = "В это время уже закреплено за: " + "; ".join(parts)
+                if len(blocked_names_by_dt) > 5:
+                    msg += " …"
+                msg += "\n\nОбъединить урок? (создать один урок, имена будут показаны рядом) да/нет"
+                data["step"] = "confirm_merge"
+                await update.message.reply_text(msg)
+                return
+            await _do_create_lessons(update, context, data)
+            context.user_data.pop("add_lesson", None)
+            return
+        await update.message.reply_text("Отменено.")
+        context.user_data.pop("add_lesson", None)
+        return
+    if step == "confirm_merge":
+        if text.lower() in ("да", "yes", "д", "y"):
+            await _do_create_lessons(update, context, data)
+        else:
+            await update.message.reply_text("Отменено.")
+        context.user_data.pop("add_lesson", None)
+        return
+
+
+def _format_summary(tomorrow: str, lessons: list) -> str:
+    if not lessons:
+        return f"📊 Сводка на завтра ({tomorrow})\n\nУроков нет."
+    total_booked = sum(l.get("booked_count", 0) or 0 for l in lessons)
+    lines = [format_lesson(l, with_id=True) for l in lessons]
+    return (
+        f"📊 Сводка на завтра ({tomorrow})\n\n"
+        f"Уроков: {len(lessons)}  ·  Записано человек: {total_booked}\n\n"
+        + "\n\n".join(lines)
+    )
+
+
+async def summary_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Сводка на завтра для репетитора."""
+    if not is_tutor(update.effective_user.id, context.bot_data["tutor_user_id"]):
+        await update.message.reply_text(MSG_ONLY_TUTOR)
+        return
+    tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    lessons = await db.get_lessons_on_date(tomorrow)
+    await update.message.reply_text(_format_summary(tomorrow, lessons))
+
+
+async def daily_summary_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Ежедневная сводка репетитору (вызывается по расписанию)."""
+    tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    lessons = await db.get_lessons_on_date(tomorrow)
+    tutor_id = context.bot_data.get("tutor_user_id")
+    if not tutor_id:
+        return
+    try:
+        await context.bot.send_message(
+            chat_id=tutor_id,
+            text=_format_summary(tomorrow, lessons),
+        )
+    except Exception:
+        pass
+
+
+def _format_date_header(lesson_date: str) -> str:
+    """Понедельник, 17.02.2025"""
+    d = datetime.strptime(lesson_date, "%Y-%m-%d").date()
+    return f"{DAY_NAMES_FULL[d.weekday()].capitalize()}, {d.strftime('%d.%m.%Y')}"
+
+
+async def _build_schedule_message(context: ContextTypes.DEFAULT_TYPE):
+    """Возвращает (text, keyboard) для экрана расписания. Период из context.user_data['schedule_range']."""
+    user_data = (getattr(context, "user_data", None) or {}) if context else {}
+    range_dates = user_data.get("schedule_range")
+    if range_dates:
+        from_date, to_date = range_dates
+        lessons = await db.get_lessons_in_range(from_date, to_date)
+        d1 = datetime.strptime(from_date, "%Y-%m-%d").strftime("%d.%m.%Y")
+        d2 = datetime.strptime(to_date, "%Y-%m-%d").strftime("%d.%m.%Y")
+        period_label = f"{d1} — {d2}"
+    else:
+        lessons = await db.get_upcoming_lessons(limit=60)
+        period_label = None
+    blocked = await db.get_all_blocked_slots()
+    text = "📅 Расписание"
+    if period_label:
+        text += f" ({period_label})\n\n"
+    else:
+        text += "\n\n"
+    if lessons:
+        by_date = {}
+        for l in lessons:
+            d = l["lesson_date"]
+            by_date.setdefault(d, []).append(l)
+        for date in sorted(by_date.keys()):
+            text += f"\n——— {_format_date_header(date)} ———\n\n"
+            for l in by_date[date]:
+                text += format_lesson(l, with_id=True) + "\n\n"
+    else:
+        text += "Уроков пока нет.\n\n"
+    if blocked:
+        # Группируем по (день, время); время нормализуем, чтобы 20:00 и "20:00 " не разъезжались
+        by_slot = {}
+        for b in blocked:
+            key = (b["day_of_week"], _normalize_slot_time(b.get("lesson_time", "") or ""))
+            by_slot.setdefault(key, []).append(b)
+        text += "\n\n🔒 Занятые слоты (это время нельзя бронировать):\n"
+        for (dow, lt), slots in sorted(by_slot.items(), key=lambda x: (x[0][0], x[0][1])):
+            day = DAY_NAMES[dow]
+            names = ", ".join(s["student_name"] for s in slots)
+            text += f"   • {day} {lt} — {names}\n"
+    keyboard = []
+    for l in lessons:
+        keyboard.append([
+            InlineKeyboardButton(f"👥 Кто записан · {l['title']} ({l['lesson_date']})", callback_data=f"tutor_bookings_{l['id']}"),
+        ])
+        keyboard.append([
+            InlineKeyboardButton("🗑 Удалить урок", callback_data=f"tutor_del_{l['id']}"),
+        ])
+    for b in blocked:
+        day = DAY_NAMES[b["day_of_week"]]
+        keyboard.append([
+            InlineKeyboardButton(f"🔓 Снять слот · {b['student_name']} ({day} {b['lesson_time']})", callback_data=f"unblock_{b['id']}"),
+        ])
+    keyboard.append([
+        InlineKeyboardButton("🔒 Закрепить слот за учеником", callback_data="tutor_block_slot"),
+    ])
+    keyboard.append([
+        InlineKeyboardButton("📅 Задать период", callback_data="tutor_schedule_set_range"),
+        InlineKeyboardButton("Показать всё", callback_data="tutor_schedule_clear_range"),
+    ])
+    keyboard.append([
+        InlineKeyboardButton("🗑 Очистить всё расписание", callback_data="tutor_clear_schedule"),
+    ])
+    return text, InlineKeyboardMarkup(keyboard)
+
+
+async def schedule_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_tutor(update.effective_user.id, context.bot_data["tutor_user_id"]):
+        await update.message.reply_text(MSG_ONLY_TUTOR)
+        return
+    text, reply_markup = await _build_schedule_message(context)
+    await update.message.reply_text(text, reply_markup=reply_markup)
+
+
+async def schedule_range_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Ввод периода для расписания (начальная и конечная дата)."""
+    data = context.user_data.get("schedule_range_input")
+    if not data:
+        return False
+    text = update.message.text.strip()
+    step = data.get("step")
+    if step == "from":
+        from_date = parse_date(text)
+        if not from_date:
+            await update.message.reply_text("❌ Неверный формат. Пример: 20.02.2025 или 2025-02-20")
+            return True
+        data["from_date"] = from_date
+        data["step"] = "to"
+        await update.message.reply_text(
+            "📅 Шаг 2/2 · Конечная дата (ДД.ММ.ГГГГ):",
+        )
+        return True
+    if step == "to":
+        to_date = parse_date(text)
+        if not to_date:
+            await update.message.reply_text("❌ Неверный формат. Пример: 27.02.2025")
+            return True
+        from_date = data["from_date"]
+        if to_date < from_date:
+            await update.message.reply_text("❌ Конечная дата должна быть не раньше начальной.")
+            return True
+        context.user_data["schedule_range"] = (from_date, to_date)
+        context.user_data.pop("schedule_range_input", None)
+        text_msg, reply_markup = await _build_schedule_message(context)
+        await update.message.reply_text(text_msg, reply_markup=reply_markup)
+        return True
+    return False
+
+
+async def block_slot_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Обработка ввода для «Закрепить слот за учеником». Возвращает True если обработано."""
+    data = context.user_data.get("block_slot")
+    if not data:
+        return False
+    text = update.message.text.strip()
+    if text.lower() in ("отмена", "отменить", "cancel"):
+        context.user_data.pop("block_slot", None)
+        await update.message.reply_text("Закрепление слота отменено.")
+        return True
+    step = data.get("step")
+
+    if step == "name":
+        data["student_name"] = text
+        data["step"] = "day"
+        await update.message.reply_text(
+            "🔒 Шаг 2/4 · День недели\n\n"
+            "Напиши: пн, вт, ср, чт, пт, сб или вс",
+        )
+        return True
+    if step == "day":
+        day = parse_day_of_week(text)
+        if day is None:
+            await update.message.reply_text("❌ Неверно. Напиши: пн, вт, ср, чт, пт, сб или вс")
+            return True
+        data["day_of_week"] = day
+        data["step"] = "time"
+        await update.message.reply_text(
+            "🔒 Шаг 3/4 · Время\n\n"
+            "Напиши время, например: 19:00",
+        )
+        return True
+    if step == "time":
+        time = parse_time(text)
+        if not time:
+            await update.message.reply_text("❌ Неверный формат. Пример: 19:00")
+            return True
+        data["time"] = time
+        # Если уже закрепляем не первый слот — используем того же ученика, не спрашиваем @
+        if data.get("student_username") is not None:
+            ok, msg = await db.add_blocked_slot(
+                data["student_name"],
+                data["day_of_week"],
+                data["time"],
+                student_username=data["student_username"],
+            )
+            data["slots_added"] = data.get("slots_added", 0) + 1
+            out = msg + "\n\nЗакрепить ещё один слот за этим учеником? Напиши да или нет."
+            data["step"] = "more_slot"
+            await update.message.reply_text(out)
+            return True
+        data["step"] = "username"
+        await update.message.reply_text(
+            "🔒 Шаг 4/4 · Telegram ученика\n\n"
+            "Введите @username ученика (без @), чтобы он видел этот слот в «Мои записи» и мог отменить. Или минус (-), если не привязывать.",
+        )
+        return True
+    if step == "username":
+        student_username = "" if text == "-" else text.strip().lstrip("@")
+        ok, msg = await db.add_blocked_slot(
+            data["student_name"],
+            data["day_of_week"],
+            data["time"],
+            student_username=student_username,
+        )
+        data["student_username"] = student_username
+        data["slots_added"] = data.get("slots_added", 0) + 1
+        out = msg + "\n\nЭто время нельзя бронировать для других уроков."
+        if student_username:
+            out += f"\n\nУченик @{student_username} увидит слот в «Мои записи» и сможет отменить."
+        out += "\n\nЗакрепить ещё один слот за этим учеником? Напиши да или нет."
+        data["step"] = "more_slot"
+        await update.message.reply_text(out)
+        return True
+    if step == "more_slot":
+        name = data.get("student_name", "ученика")
+        if text.lower() in ("да", "yes", "д", "y"):
+            data["step"] = "day"
+            await update.message.reply_text(
+                f"🔒 Ещё слот для {name}\n\n"
+                "День недели: пн, вт, ср, чт, пт, сб или вс",
+            )
+            return True
+        if text.lower() in ("нет", "no", "н", "n"):
+            n = data.get("slots_added", 1)
+            context.user_data.pop("block_slot", None)
+            await update.message.reply_text(
+                f"✅ Готово. Закреплено слотов за {name}: {n}.",
+            )
+            return True
+        await update.message.reply_text("Напиши да или нет.")
+        return True
+    return False
+
+
+async def _refresh_schedule_message(query, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обновляет сообщение расписания (после unblock и т.п.)."""
+    text, reply_markup = await _build_schedule_message(context)
+    if len(text) > 4090:
+        text = text[:4080] + "\n\n… (обрезано, задайте период)"
+    await query.edit_message_text(text, reply_markup=reply_markup)
