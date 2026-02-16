@@ -50,6 +50,8 @@ def format_lesson(lesson: dict, with_id: bool = False) -> str:
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    for key in FLOW_KEYS:
+        context.user_data.pop(key, None)
     user = update.effective_user
     title = context.bot_data.get("bot_title") or "Репетитор"
     text = (
@@ -106,8 +108,16 @@ async def homework_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return True
     api_key = context.bot_data.get("yandex_api_key") or ""
     folder_id = context.bot_data.get("yandex_folder_id") or ""
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-    reply = await homework_llm.ask_homework(text, api_key, folder_id)
+    try:
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+        reply = await homework_llm.ask_homework(text, api_key, folder_id)
+    except Exception as e:
+        logger.exception("homework_receive: %s", e)
+        await update.message.reply_text(
+            "Произошла ошибка при запросе. Попробуй ещё раз или нажми /start.",
+        )
+        context.user_data.pop("homework_help", None)
+        return True
     context.user_data.pop("homework_help", None)
     if reply:
         if len(reply) > 4000:

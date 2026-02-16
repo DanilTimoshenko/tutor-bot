@@ -80,9 +80,12 @@ def main() -> None:
             await h.add_lesson_receive(update, context)
             return
         # Нет активного диалога — подсказка, чтобы не было «бот молчит»
-        await update.message.reply_text(
-            "Используйте кнопки меню ниже или нажмите /start для выбора действия."
-        )
+        try:
+            await update.message.reply_text(
+                "Используйте кнопки меню ниже или нажмите /start для выбора действия."
+            )
+        except Exception:
+            logger.exception("Не удалось отправить ответ пользователю")
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
@@ -95,6 +98,13 @@ def main() -> None:
             )
         else:
             logger.exception("Update %s caused error %s", update, error)
+            try:
+                if update and update.effective_message:
+                    await update.effective_message.reply_text(
+                        "Произошла ошибка. Попробуй ещё раз или /start."
+                    )
+            except Exception:
+                pass
 
     app.add_error_handler(on_error)
 
