@@ -73,6 +73,16 @@ async def init_db():
                     created_at TEXT NOT NULL
                 )
             """)
+        # Раздел ЕГЭ: 27 заданий (пример решения + краткое объяснение), источник — code-enjoy.ru
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS ege_tasks (
+                task_number INTEGER PRIMARY KEY CHECK (task_number >= 1 AND task_number <= 27),
+                title TEXT NOT NULL DEFAULT '',
+                example_solution TEXT NOT NULL DEFAULT '',
+                explanation TEXT NOT NULL DEFAULT '',
+                source_url TEXT DEFAULT ''
+            )
+        """)
         await db.commit()
 
 
@@ -340,3 +350,51 @@ async def clear_all_schedule() -> tuple[int, int]:
         await db.execute("DELETE FROM blocked_slots")
         await db.commit()
     return (n_lessons, n_slots)
+
+
+# ——— Раздел ЕГЭ (27 заданий) ———
+
+async def get_ege_task(task_number: int) -> dict | None:
+    """Возвращает задание ЕГЭ по номеру (1–27) или None."""
+    if not (1 <= task_number <= 27):
+        return None
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT task_number, title, example_solution, explanation, source_url FROM ege_tasks WHERE task_number = ?",
+            (task_number,),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def set_ege_task(
+    task_number: int,
+    title: str = "",
+    example_solution: str = "",
+    explanation: str = "",
+    source_url: str = "",
+) -> None:
+    """Создаёт или обновляет задание ЕГЭ (1–27)."""
+    if not (1 <= task_number <= 27):
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """INSERT INTO ege_tasks (task_number, title, example_solution, explanation, source_url)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(task_number) DO UPDATE SET
+                 title = excluded.title,
+                 example_solution = excluded.example_solution,
+                 explanation = excluded.explanation,
+                 source_url = excluded.source_url""",
+            (task_number, title or "", example_solution or "", explanation or "", source_url or ""),
+        )
+        await db.commit()
+
+
+async def get_all_ege_task_numbers() -> list[int]:
+    """Номера заданий ЕГЭ, для которых есть запись в БД."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT task_number FROM ege_tasks ORDER BY task_number")
+        rows = await cursor.fetchall()
+        return [r[0] for r in rows]

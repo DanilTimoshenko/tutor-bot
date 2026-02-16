@@ -107,6 +107,7 @@ def _build_main_menu_content(user_id: int, first_name: str | None, bot_data: dic
         ]
         if bot_data.get("openai_api_key"):
             keyboard.append([InlineKeyboardButton("📝 Помощь с домашкой", callback_data="student_homework_help")])
+        keyboard.append([InlineKeyboardButton("📚 Раздел ЕГЭ", callback_data="student_ege")])
     return text, keyboard
 
 
@@ -416,6 +417,68 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 "Для выхода нажми кнопку ниже или /start.",
                 reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
             )
+
+        elif data == "student_ege":
+            text = (
+                "📚 Раздел ЕГЭ по информатике\n\n"
+                "Выбери номер задания (1–27). Откроется пример решения и краткое объяснение.\n\n"
+                "Источник материалов: code-enjoy.ru"
+            )
+            keyboard = []
+            for row_start in range(1, 28, 3):
+                row = [
+                    InlineKeyboardButton(f"{row_start}", callback_data=f"ege_task_{row_start}"),
+                    InlineKeyboardButton(f"{row_start + 1}", callback_data=f"ege_task_{row_start + 1}"),
+                    InlineKeyboardButton(f"{row_start + 2}", callback_data=f"ege_task_{row_start + 2}"),
+                ]
+                keyboard.append(row)
+            keyboard.extend(KEYBOARD_BACK_TO_MAIN)
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+        elif data.startswith("ege_task_"):
+            try:
+                num = int(data.split("_")[2])
+            except (IndexError, ValueError):
+                num = 0
+            if not (1 <= num <= 27):
+                await query.edit_message_text("Некорректный номер задания.", reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN))
+                return
+            task = await db.get_ege_task(num)
+            if not task or (not (task.get("explanation") or task.get("example_solution"))):
+                msg = (
+                    f"📚 Задание {num}\n\n"
+                    "Контент пока не добавлен. Разбор заданий можно посмотреть на сайте:\n"
+                    "https://code-enjoy.ru/courses/kurs_ege_po_informatike/"
+                )
+                keyboard = [
+                    [InlineKeyboardButton("📚 К списку заданий", callback_data="student_ege")],
+                ]
+                keyboard.extend(KEYBOARD_BACK_TO_MAIN)
+                await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard))
+                return
+            title = (task.get("title") or "").strip() or f"Задание {num}"
+            explanation = (task.get("explanation") or "").strip()
+            example = (task.get("example_solution") or "").strip()
+            source_url = (task.get("source_url") or "").strip()
+            parts = [f"📚 Задание {num}. {title}", ""]
+            if explanation:
+                parts.append(explanation)
+                parts.append("")
+            if example:
+                parts.append("Пример решения:")
+                parts.append(example)
+                parts.append("")
+            if source_url:
+                parts.append(f"Источник: {source_url}")
+            body = "\n".join(parts).strip()
+            if len(body) > 4000:
+                body = body[:3990] + "\n\n… (текст обрезан)"
+            body_html, parse_mode = _format_homework_reply_for_telegram(body)
+            keyboard = [
+                [InlineKeyboardButton("📚 К списку заданий", callback_data="student_ege")],
+            ]
+            keyboard.extend(KEYBOARD_BACK_TO_MAIN)
+            await query.edit_message_text(body_html, parse_mode=parse_mode, reply_markup=InlineKeyboardMarkup(keyboard))
 
         elif data == "admin_add_tutor":
             if not is_admin(user_id, context.bot_data):
