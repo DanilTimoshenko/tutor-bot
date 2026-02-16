@@ -124,9 +124,14 @@ async def homework_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             reply = reply[:3990] + "\n\n… (ответ обрезан)"
         await update.message.reply_text(reply)
     else:
-        await update.message.reply_text(
-            "Не удалось получить ответ. Проверь, что у репетитора заданы YANDEX_API_KEY и YANDEX_FOLDER_ID, или попробуй позже.",
-        )
+        if api_key and folder_id:
+            await update.message.reply_text(
+                "Не удалось получить ответ от Yandex GPT. Возможно, ошибка ключа, квоты или доступа к модели в каталоге. Попробуй позже — репетитор может посмотреть логи в Railway."
+            )
+        else:
+            await update.message.reply_text(
+                "Не удалось получить ответ. Проверь, что у репетитора заданы YANDEX_API_KEY и YANDEX_FOLDER_ID в Railway Variables, или попробуй позже.",
+            )
     return True
 
 
