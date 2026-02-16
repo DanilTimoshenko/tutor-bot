@@ -21,6 +21,39 @@ FLOW_KEYS = ("add_lesson", "block_slot", "request_slot", "schedule_range_input",
 KEYBOARD_BACK_TO_MAIN = [[InlineKeyboardButton("🏠 Вернуться на главную", callback_data="main_menu")]]
 
 
+def _format_homework_reply_for_telegram(text: str) -> tuple[str, str | None]:
+    """
+    Конвертирует ответ с блоками кода (```python ... ``` и т.п.) в HTML для Telegram:
+    моноширинный блок + подпись языка (как «Python») сверху. Подсветку синтаксиса Telegram не поддерживает.
+    """
+    def escape_html(s: str) -> str:
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    blocks: list[str] = []
+    zw = "\u200b"
+
+    # Группа 1 — язык (python, javascript, ...), группа 2 — код
+    pattern = re.compile(r"```(\w*)\s*\n(.*?)```", re.DOTALL)
+
+    def replace_block(m: re.Match) -> str:
+        lang = (m.group(1) or "").strip().lower()
+        code = m.group(2)
+        idx = len(blocks)
+        label = ""
+        if lang:
+            name = lang.capitalize()
+            label = f"<b>{escape_html(name)}</b>\n"
+        blocks.append(label + "<pre><code>" + escape_html(code) + "</code></pre>")
+        return f"{zw}{idx}{zw}"
+    if not pattern.search(text):
+        return text, None
+    temp = pattern.sub(replace_block, text)
+    temp = escape_html(temp)
+    for i, block in enumerate(blocks):
+        temp = temp.replace(f"{zw}{i}{zw}", block, 1)
+    return temp, "HTML"
+
+
 def _clear_other_flows(context: ContextTypes.DEFAULT_TYPE, keep: str) -> None:
     """Сбрасывает все пошаговые диалоги, кроме keep. Тогда после «нет»/«спасибо» бот не уйдёт в старый сценарий."""
     for key in FLOW_KEYS:
@@ -149,7 +182,8 @@ async def homework_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if reply:
         if len(reply) > 4000:
             reply = reply[:3990] + "\n\n… (ответ обрезан)"
-        await update.message.reply_text(reply)
+        body, parse_mode = _format_homework_reply_for_telegram(reply)
+        await update.message.reply_text(body, parse_mode=parse_mode)
     else:
         if api_key and folder_id:
             await update.message.reply_text(
