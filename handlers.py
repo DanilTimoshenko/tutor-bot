@@ -34,6 +34,7 @@ def _latex_to_plain(text: str) -> str:
     t = re.sub(r"_\{([^{}]*)\}", r"_\1", t)
     # Частые команды → символы
     t = t.replace("\\cdots", "…")
+    t = t.replace("\\ldots", "…")
     t = t.replace("\\cdot", "·")
     t = t.replace("\\times", "×")
     t = t.replace("\\equiv", "≡")
@@ -75,7 +76,7 @@ def _format_homework_reply_for_telegram(text: str) -> tuple[str, str | None]:
         idx = len(blocks)
         label = ""
         if lang:
-            name = lang.capitalize()
+            name = "Формула" if lang == "formula" else lang.capitalize()
             label = f"<b>{escape_html(name)}</b>\n"
         blocks.append(label + "<pre><code>" + escape_html(code) + "</code></pre>")
         return f"{zw}{idx}{zw}"
