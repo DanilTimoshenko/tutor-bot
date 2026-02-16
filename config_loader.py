@@ -15,8 +15,16 @@ except ModuleNotFoundError:
     except (ValueError, TypeError):
         _tutor_id = 0
 
+    _token_raw = os.environ.get("BOT_TOKEN", "")
+    # В логах Railway видно, доходит ли переменная (без показа значения)
+    if not _token_raw or not _token_raw.strip():
+        import sys
+        print("DEBUG: BOT_TOKEN в окружении не задан или пустой. Все переменные:", list(os.environ.keys()), file=sys.stderr)
+    else:
+        print("DEBUG: BOT_TOKEN задан (длина %d)" % len(_token_raw), file=sys.stderr)
+
     class config:  # noqa: A001
-        BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+        BOT_TOKEN = (_token_raw or "").strip()
         TUTOR_USER_ID = _tutor_id
         BOT_TITLE = os.environ.get("BOT_TITLE") or None
         MATERIALS_CHANNEL_LINK = os.environ.get("MATERIALS_CHANNEL_LINK") or None
