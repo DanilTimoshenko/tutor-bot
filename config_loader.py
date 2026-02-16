@@ -7,6 +7,7 @@ import os
 try:
     import config
 except ModuleNotFoundError:
+    import sys
     # Нет config.py — читаем из окружения (деплой на Railway и др.)
     _uid = os.environ.get("TUTOR_USER_ID", "0")
     _h = os.environ.get("SUMMARY_DAILY_HOUR", "")
@@ -16,10 +17,8 @@ except ModuleNotFoundError:
         _tutor_id = 0
 
     _token_raw = os.environ.get("BOT_TOKEN", "")
-    # В логах Railway видно, доходит ли переменная (без показа значения)
     if not _token_raw or not _token_raw.strip():
-        import sys
-        print("DEBUG: BOT_TOKEN в окружении не задан или пустой. Все переменные:", list(os.environ.keys()), file=sys.stderr)
+        print("DEBUG: BOT_TOKEN в окружении не задан. Переменные:", list(os.environ.keys()), file=sys.stderr)
     else:
         print("DEBUG: BOT_TOKEN задан (длина %d)" % len(_token_raw), file=sys.stderr)
 
