@@ -22,7 +22,12 @@ async def ask_homework(user_text: str, api_key: str, folder_id: str = "") -> str
     """
     api_key = (api_key or "").strip()
     folder_id = (folder_id or "").strip()
-    if not api_key or not folder_id or len(user_text.strip()) < 2:
+    if not api_key or not folder_id:
+        logger.warning(
+            "Yandex GPT: запрос пропущен — не заданы YANDEX_API_KEY или YANDEX_FOLDER_ID в Variables."
+        )
+        return None
+    if len(user_text.strip()) < 2:
         return None
     model_uri = f"gpt://{folder_id}/yandexgpt-lite/latest"
     payload = {
@@ -49,11 +54,17 @@ async def ask_homework(user_text: str, api_key: str, folder_id: str = "") -> str
             ) as resp:
                 if resp.status != 200:
                     text = await resp.text()
-                    logger.warning("Yandex GPT API error %s: %s", resp.status, text)
+                    preview = text[:1000] + ("..." if len(text) > 1000 else "")
+                    logger.warning(
+                        "Yandex GPT API error: status=%s, body=%s. "
+                        "Проверь YANDEX_API_KEY, YANDEX_FOLDER_ID, квоты и доступ к YandexGPT в каталоге.",
+                        resp.status,
+                        preview,
+                    )
                     return None
                 data = await resp.json()
     except Exception as e:
-        logger.exception("Yandex GPT request failed: %s", e)
+        logger.exception("Yandex GPT request failed (сеть/таймаут/разбор ответа): %s", e)
         return None
     try:
         result = data.get("result", {})
@@ -61,6 +72,11 @@ async def ask_homework(user_text: str, api_key: str, folder_id: str = "") -> str
         if alternatives and "message" in alternatives[0]:
             return alternatives[0]["message"].get("text", "").strip()
         return None
-    except (KeyError, IndexError, TypeError):
-        logger.warning("Unexpected Yandex GPT response: %s", data)
+    except (KeyError, IndexError, TypeError) as e:
+        logger.warning(
+            "Yandex GPT: неожиданная структура ответа (result/alternatives/text). "
+            "Ответ: %s. Ошибка: %s",
+            data,
+            e,
+        )
         return None

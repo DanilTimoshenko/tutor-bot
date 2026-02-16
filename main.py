@@ -6,6 +6,7 @@ import logging
 from datetime import time as dt_time
 
 from telegram import BotCommand
+from telegram.error import Conflict
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
 from config_loader import config
@@ -84,6 +85,19 @@ def main() -> None:
         )
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+
+    async def on_error(update, context):
+        error = context.error
+        if isinstance(error, Conflict):
+            logger.warning(
+                "Conflict: другой экземпляр бота уже получает обновления. "
+                "Останавливаю этот процесс — оставь запущенным только один (Railway или локально)."
+            )
+            await context.application.stop()
+        else:
+            logger.exception("Update %s caused error %s", update, error)
+
+    app.add_error_handler(on_error)
 
     async def post_init(application):
         await db.init_db()
