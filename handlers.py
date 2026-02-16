@@ -689,24 +689,26 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     logger.warning("ege_show_solution markdown failed, fallback to HTML: %s", e)
                     code_html = _format_homework_reply_for_telegram(f"Решение (код):\n\n{example}")[0]
                     await context.bot.send_message(chat_id=chat_id, text=code_html, parse_mode="HTML")
-                # Скрин с текстом к решению только у задания 2; у 5 и 6 — только код
-                # Скрин с текстом/Excel только у заданий 2 и 9; у 5 и 6 — только код
-                if solution_image and (num == 2 or num == 9 or num == 13):
+                # Скрин(ы) решения: для 2, 9, 13 — один; для 18 — несколько; для 19–21 — по скрину на тип
+                if solution_images:
                     try:
                         root = Path(__file__).parent
-                        path = root / solution_image if not solution_image.startswith("http") else None
-                        cap = "📎 Решение через Excel (скрин)." if num == 9 else "📎 Текст к решению (скрин)."
-                        if path and path.is_file():
-                            with open(path, "rb") as f:
-                                await context.bot.send_photo(
-                                    chat_id=chat_id,
-                                    photo=InputFile(f, filename=path.name),
-                                    caption=cap,
-                                )
-                        elif solution_image.startswith("http"):
-                            await context.bot.send_photo(chat_id=chat_id, photo=solution_image, caption=cap)
+                        for idx, one in enumerate(solution_images):
+                            cap = "📎 Решение через Excel (скрин)." if num == 9 and idx == 0 else "📎 Текст к решению (скрин)." if num == 2 and idx == 0 else (f"📎 Решение. Задание {num}.{subtask}" if subtask and idx == 0 else f"📎 Решение. Задание {num}") + (" (продолжение)" if idx > 0 else "")
+                            if one.startswith("http://") or one.startswith("https://"):
+                                await context.bot.send_photo(chat_id=chat_id, photo=one, caption=cap)
+                            else:
+                                path = root / one
+                                if path.is_file():
+                                    with open(path, "rb") as f:
+                                        await context.bot.send_photo(chat_id=chat_id, photo=InputFile(f, filename=path.name), caption=cap)
+                                else:
+                                    logger.warning("ege_show_solution_%s image %s not found: %s", num, idx, one)
+                        await _send_back_to_tasks()
+                        await query.answer("Решение отправлено.")
+                        return
                     except Exception as e:
-                        logger.warning("ege_show_solution_%s image: %s", num, e)
+                        logger.warning("ege_show_solution_%s images after code: %s", num, e)
                 await _send_back_to_tasks()
                 await query.answer("Решение отправлено.")
                 return
