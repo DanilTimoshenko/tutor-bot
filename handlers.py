@@ -696,6 +696,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             ]
             if context.bot_data.get("openai_api_key"):
                 keyboard.append([InlineKeyboardButton("📝 Помощь с домашкой", callback_data="student_homework_help")])
+            keyboard.append([InlineKeyboardButton("📚 Раздел ЕГЭ", callback_data="student_ege")])
             await query.message.reply_text(
                 "👀 Так видят ученики:\n━━━━━━━━━━━━━━━━━━━━",
             )
