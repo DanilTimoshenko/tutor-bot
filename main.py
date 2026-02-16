@@ -90,10 +90,9 @@ def main() -> None:
         error = context.error
         if isinstance(error, Conflict):
             logger.warning(
-                "Conflict: другой экземпляр бота уже получает обновления. "
-                "Останавливаю этот процесс — оставь запущенным только один (Railway или локально)."
+                "Conflict: другой экземпляр бота получает обновления. "
+                "Ждём и повторим — не выключаем процесс, чтобы после остановки второго экземпляра этот подхватил обновления."
             )
-            await context.application.stop()
         else:
             logger.exception("Update %s caused error %s", update, error)
 
