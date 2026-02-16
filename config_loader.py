@@ -22,6 +22,19 @@ except ModuleNotFoundError:
     else:
         print("DEBUG: BOT_TOKEN задан (длина %d)" % len(_token_raw), file=sys.stderr)
 
+    _yandex_key = os.environ.get("YANDEX_API_KEY") or None
+    _yandex_folder = os.environ.get("YANDEX_FOLDER_ID") or None
+    _yandex_ok = bool(_yandex_key and _yandex_key.strip() and _yandex_folder and _yandex_folder.strip())
+    print(
+        "DEBUG: YANDEX_API_KEY=%s, YANDEX_FOLDER_ID=%s (Помощь с домашкой: %s)"
+        % ("задан" if (_yandex_key and _yandex_key.strip()) else "НЕ ЗАДАН",
+           "задан" if (_yandex_folder and _yandex_folder.strip()) else "НЕ ЗАДАН",
+           "да" if _yandex_ok else "нет"),
+        file=sys.stderr,
+    )
+    if not _yandex_ok and any(k for k in os.environ if "YANDEX" in k.upper()):
+        print("DEBUG: переменные с YANDEX в окружении: %s" % [k for k in os.environ if "YANDEX" in k.upper()], file=sys.stderr)
+
     class config:  # noqa: A001
         BOT_TOKEN = (_token_raw or "").strip()
         TUTOR_USER_ID = _tutor_id
@@ -29,5 +42,5 @@ except ModuleNotFoundError:
         MATERIALS_CHANNEL_LINK = os.environ.get("MATERIALS_CHANNEL_LINK") or None
         CHANNEL_ID = os.environ.get("CHANNEL_ID") or None
         SUMMARY_DAILY_HOUR = int(_h) if _h and str(_h).strip().isdigit() else None
-        YANDEX_API_KEY = os.environ.get("YANDEX_API_KEY") or None
-        YANDEX_FOLDER_ID = os.environ.get("YANDEX_FOLDER_ID") or None
+        YANDEX_API_KEY = _yandex_key
+        YANDEX_FOLDER_ID = _yandex_folder
