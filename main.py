@@ -121,6 +121,11 @@ def main() -> None:
 
     async def post_init(application):
         await db.init_db()
+        try:
+            from set_ege_images_1_6 import ensure_ege_tasks_1_6
+            await ensure_ege_tasks_1_6()
+        except Exception as e:
+            logger.warning("ЕГЭ 1–6: не удалось заполнить задания при старте: %s", e)
         me = await application.bot.get_me()
         application.bot_data["bot_username"] = me.username or ""
         application.bot_data["channel_id"] = getattr(config, "CHANNEL_ID", None)

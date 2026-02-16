@@ -76,16 +76,18 @@ done()
 # Ответ: 1141"""
 
 
-async def main() -> None:
-    await db.init_db()
-    titles = {
-        1: "Графы, таблица дорог",
-        2: "Таблицы истинности, логические выражения",
-        3: "Базы данных, выручка",
-        4: "Кодирование Фано",
-        5: "Алгоритм, троичная система",
-        6: "Исполнитель Черепаха",
-    }
+EGE_1_6_TITLES = {
+    1: "Графы, таблица дорог",
+    2: "Таблицы истинности, логические выражения",
+    3: "Базы данных, выручка",
+    4: "Кодирование Фано",
+    5: "Алгоритм, троичная система",
+    6: "Исполнитель Черепаха",
+}
+
+
+async def fill_ege_tasks_1_6() -> None:
+    """Заполняет задания 1–6: task_image, solution_image, код решений для 2, 5, 6."""
     for num in range(1, 7):
         task_image = f"ege_images/{num}_task.png"
         solution_image = f"ege_images/{num}_solution.png"
@@ -98,14 +100,28 @@ async def main() -> None:
             example = TASK_6_CODE
         await db.set_ege_task(
             task_number=num,
-            title=titles.get(num, f"Задание {num}"),
+            title=EGE_1_6_TITLES.get(num, f"Задание {num}"),
             example_solution=example,
             explanation="",
             source_url="https://code-enjoy.ru/courses/kurs_ege_po_informatike/",
             solution_image=solution_image,
             task_image=task_image,
         )
-        print(f"Задание {num}: task_image={task_image}, solution_image={solution_image}, code={bool(example)}")
+
+
+async def ensure_ege_tasks_1_6() -> None:
+    """При старте бота: если задание 1 без task_image — заполняет 1–6. Чтобы задания 1–6 всегда были с фото и решением."""
+    task1 = await db.get_ege_task(1)
+    if task1 and (task1.get("task_image") or "").strip():
+        return
+    await fill_ege_tasks_1_6()
+
+
+async def main() -> None:
+    await db.init_db()
+    await fill_ege_tasks_1_6()
+    for num in range(1, 7):
+        print(f"Задание {num}: ege_images/{num}_task.png, ege_images/{num}_solution.png")
     print("Готово. Задания 1–6 настроены.")
 
 
