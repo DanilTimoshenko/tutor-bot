@@ -5,6 +5,7 @@ import io
 import logging
 import re
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.ext import ContextTypes
@@ -480,7 +481,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 await query.edit_message_text("Некорректный номер задания.", reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN))
                 return
             task = await db.get_ege_task(num)
-            if not task or (not (task.get("explanation") or task.get("example_solution"))):
+            has_any = task and (
+                (task.get("task_image") or "").strip()
+                or (task.get("solution_image") or "").strip()
+                or (task.get("explanation") or "").strip()
+                or (task.get("example_solution") or "").strip()
+            )
+            if not has_any:
                 msg = (
                     f"📚 Задание {num}\n\n"
                     "Контент пока не добавлен. Разбор заданий можно посмотреть на сайте:\n"
@@ -493,28 +500,83 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard))
                 return
             title = (task.get("title") or "").strip() or f"Задание {num}"
-            explanation = (task.get("explanation") or "").strip()
-            example = (task.get("example_solution") or "").strip()
-            source_url = (task.get("source_url") or "").strip()
-            parts = [f"📚 Задание {num}. {title}", ""]
-            if explanation:
-                parts.append(explanation)
-                parts.append("")
-            if example:
-                parts.append("Пример решения:")
-                parts.append(example)
-                parts.append("")
-            if source_url:
-                parts.append(f"Источник: {source_url}")
-            body = "\n".join(parts).strip()
-            if len(body) > 4000:
-                body = body[:3990] + "\n\n… (текст обрезан)"
-            body_html, parse_mode = _format_homework_reply_for_telegram(body)
+            chat_id = query.message.chat_id
+            task_image = (task.get("task_image") or "").strip()
+            # Сразу показываем задание: фото или текст
+            if task_image:
+                try:
+                    if task_image.startswith("http://") or task_image.startswith("https://"):
+                        await context.bot.send_photo(chat_id=chat_id, photo=task_image, caption=f"📋 Задание {num}. {title}")
+                    else:
+                        root = Path(__file__).parent
+                        path = root / task_image
+                        if path.is_file():
+                            with open(path, "rb") as f:
+                                await context.bot.send_photo(chat_id=chat_id, photo=InputFile(f, filename=path.name), caption=f"📋 Задание {num}. {title}")
+                except Exception as e:
+                    logger.warning("ege_task_%s: не удалось отправить фото задания: %s", num, e)
+            # Сообщение с кнопкой «Показать решение»
+            msg = f"📚 Задание {num}. {title}\n\nНажми кнопку ниже, чтобы получить решение."
             keyboard = [
+                [InlineKeyboardButton("📎 Показать решение", callback_data=f"ege_show_solution_{num}")],
                 [InlineKeyboardButton("📚 К списку заданий", callback_data="student_ege")],
             ]
             keyboard.extend(KEYBOARD_BACK_TO_MAIN)
-            await query.edit_message_text(body_html, parse_mode=parse_mode, reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard))
+
+        elif data.startswith("ege_show_solution_"):
+            try:
+                num = int(data.split("_")[3])
+            except (IndexError, ValueError):
+                num = 0
+            if not (1 <= num <= 27):
+                await query.answer("Некорректный номер.")
+                return
+            task = await db.get_ege_task(num)
+            if not task:
+                await query.answer("Задание не найдено.", show_alert=True)
+                return
+            example = (task.get("example_solution") or "").strip()
+            solution_image = (task.get("solution_image") or "").strip()
+            chat_id = query.message.chat_id
+            # Решение-код выдаём текстом, иначе — фото
+            def _looks_like_code(t: str) -> bool:
+                if not t or len(t) < 20:
+                    return False
+                t = t.lower()
+                return ("def " in t or "for " in t or "while " in t) and ("print(" in t or "return " in t or "range(" in t)
+            if example and _looks_like_code(example):
+                code_html = _format_homework_reply_for_telegram(f"Решение (код):\n\n{example}")[0]
+                if len(code_html) > 4000:
+                    code_html = code_html[:3990] + "\n\n… (обрезано)"
+                await context.bot.send_message(chat_id=chat_id, text=code_html, parse_mode="HTML")
+                await query.answer("Решение отправлено текстом.")
+                return
+            if solution_image:
+                try:
+                    if solution_image.startswith("http://") or solution_image.startswith("https://"):
+                        await context.bot.send_photo(chat_id=chat_id, photo=solution_image, caption=f"📎 Решение. Задание {num}")
+                    else:
+                        root = Path(__file__).parent
+                        path = root / solution_image
+                        if path.is_file():
+                            with open(path, "rb") as f:
+                                await context.bot.send_photo(chat_id=chat_id, photo=InputFile(f, filename=path.name), caption=f"📎 Решение. Задание {num}")
+                        else:
+                            await query.answer("Файл решения не найден.", show_alert=True)
+                            return
+                    await query.answer("Решение отправлено.")
+                except Exception as e:
+                    logger.warning("ege_show_solution_%s: %s", num, e)
+                    await query.answer("Не удалось отправить фото.", show_alert=True)
+            elif example:
+                body_html, parse_mode = _format_homework_reply_for_telegram(f"Решение:\n\n{example}")
+                if len(body_html) > 4000:
+                    body_html = body_html[:3990] + "\n\n… (обрезано)"
+                await context.bot.send_message(chat_id=chat_id, text=body_html, parse_mode=parse_mode)
+                await query.answer("Решение отправлено.")
+            else:
+                await query.answer("Решение для этого задания не добавлено.", show_alert=True)
 
         elif data == "admin_add_tutor":
             if not is_admin(user_id, context.bot_data):

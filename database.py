@@ -80,9 +80,16 @@ async def init_db():
                 title TEXT NOT NULL DEFAULT '',
                 example_solution TEXT NOT NULL DEFAULT '',
                 explanation TEXT NOT NULL DEFAULT '',
-                source_url TEXT DEFAULT ''
+                source_url TEXT DEFAULT '',
+                solution_image TEXT DEFAULT '',
+                task_image TEXT DEFAULT ''
             )
         """)
+        for col in ("solution_image", "task_image"):
+            try:
+                await db.execute(f"ALTER TABLE ege_tasks ADD COLUMN {col} TEXT DEFAULT ''")
+            except Exception:
+                pass
         await db.commit()
 
 
@@ -361,7 +368,7 @@ async def get_ege_task(task_number: int) -> dict | None:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT task_number, title, example_solution, explanation, source_url FROM ege_tasks WHERE task_number = ?",
+            "SELECT task_number, title, example_solution, explanation, source_url, solution_image, task_image FROM ege_tasks WHERE task_number = ?",
             (task_number,),
         )
         row = await cursor.fetchone()
@@ -374,20 +381,24 @@ async def set_ege_task(
     example_solution: str = "",
     explanation: str = "",
     source_url: str = "",
+    solution_image: str = "",
+    task_image: str = "",
 ) -> None:
-    """Создаёт или обновляет задание ЕГЭ (1–27)."""
+    """Создаёт или обновляет задание ЕГЭ (1–27). task_image/solution_image — путь (ege_images/1_task.png) или URL."""
     if not (1 <= task_number <= 27):
         return
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            """INSERT INTO ege_tasks (task_number, title, example_solution, explanation, source_url)
-               VALUES (?, ?, ?, ?, ?)
+            """INSERT INTO ege_tasks (task_number, title, example_solution, explanation, source_url, solution_image, task_image)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(task_number) DO UPDATE SET
                  title = excluded.title,
                  example_solution = excluded.example_solution,
                  explanation = excluded.explanation,
-                 source_url = excluded.source_url""",
-            (task_number, title or "", example_solution or "", explanation or "", source_url or ""),
+                 source_url = excluded.source_url,
+                 solution_image = excluded.solution_image,
+                 task_image = excluded.task_image""",
+            (task_number, title or "", example_solution or "", explanation or "", source_url or "", solution_image or "", task_image or ""),
         )
         await db.commit()
 

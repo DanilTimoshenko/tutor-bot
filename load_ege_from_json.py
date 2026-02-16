@@ -39,7 +39,7 @@ async def main() -> None:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     if not isinstance(data, list):
-        print("Ожидается JSON-массив объектов с полями task_number, title, explanation, example_solution, source_url", file=sys.stderr)
+        print("Ожидается JSON-массив объектов с полями task_number, title, explanation, example_solution, source_url, solution_image", file=sys.stderr)
         sys.exit(1)
     await db.init_db()
     for item in data:
@@ -53,6 +53,8 @@ async def main() -> None:
             example_solution=item.get("example_solution") or "",
             explanation=item.get("explanation") or "",
             source_url=item.get("source_url") or "",
+            solution_image=item.get("solution_image") or "",
+            task_image=item.get("task_image") or "",
         )
         print(f"Задание {num} загружено.")
     print("Готово.")
