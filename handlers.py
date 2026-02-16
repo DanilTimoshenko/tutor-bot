@@ -1,11 +1,12 @@
 """
 Обработчики команд и кнопок бота.
 """
+import io
 import logging
 import re
 from datetime import datetime, timedelta
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.ext import ContextTypes
 
 import database as db
@@ -63,6 +64,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         context.user_data.pop(key, None)
     user = update.effective_user
     title = context.bot_data.get("bot_title") or "Репетитор"
+    tutor_ids = _tutor_ids(context.bot_data)
+    logger.info(
+        "start: user_id=%s, tutor_ids=%s, is_tutor=%s",
+        user.id,
+        tutor_ids,
+        is_tutor(user.id, context.bot_data),
+    )
     text = (
         f"👋 Привет, {user.first_name or 'друг'}!\n\n"
         f"Я бот записи на уроки — {title}.\n\n"
@@ -85,6 +93,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             [InlineKeyboardButton("📊 Сводка на завтра", callback_data="tutor_summary")],
             [InlineKeyboardButton("👀 Как видят ученики", callback_data="tutor_preview_student")],
             [InlineKeyboardButton("💬 Как очистить чат", callback_data="tutor_clear_chat_help")],
+            [InlineKeyboardButton("📥 Скачать БД", callback_data="admin_download_db")],
         ]
         if is_admin(user.id, context.bot_data):
             keyboard.append([InlineKeyboardButton("➕ Добавить репетитора", callback_data="admin_add_tutor")])
@@ -377,6 +386,35 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 "  (твой ID уже считается репетитором как админ). После изменения сделай Redeploy.\n\n"
                 "Когда будет готова команда добавления из бота — подскажешь, добавлю.",
             )
+
+        elif data == "admin_download_db":
+            if not is_tutor(user_id, context.bot_data):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            try:
+                path = db.DB_PATH
+                if not path.exists():
+                    await query.edit_message_text(
+                        "📥 Скачать БД\n\nФайл базы данных ещё не создан (нет уроков/записей). "
+                        "После первого создания урока файл появится."
+                    )
+                    return
+                with open(path, "rb") as f:
+                    data_bytes = f.read()
+                await query.edit_message_text("📥 Отправляю файл базы данных…")
+                await context.bot.send_document(
+                    chat_id=query.message.chat_id,
+                    document=InputFile(io.BytesIO(data_bytes), filename="tutor_bot.db"),
+                    caption="Резервная копия базы (уроки, записи, слоты). Сохрани на ноутбук при переносе сервера.",
+                )
+                await query.edit_message_text(
+                    "✅ Файл базы отправлен в чат. Сохрани его на ноутбук — при переносе сервера можно будет использовать эту копию."
+                )
+            except Exception as e:
+                logger.exception("admin_download_db: %s", e)
+                await query.edit_message_text(
+                    f"❌ Не удалось отправить базу: {e}. Проверь логи на сервере."
+                )
 
         elif data == "tutor_add_lesson":
             if not is_tutor(user_id, context.bot_data):
