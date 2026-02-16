@@ -361,8 +361,29 @@ async def clear_all_schedule() -> tuple[int, int]:
 
 # ——— Раздел ЕГЭ (27 заданий) ———
 
+def _subtask_row(task_number: int, row: dict, part: int, default_title: str) -> dict | None:
+    import json
+    raw = (row.get("subtasks") or "").strip()
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+        sub = data.get(str(part)) or {}
+        return {
+            "task_number": task_number,
+            "title": sub.get("title", default_title),
+            "example_solution": sub.get("example_solution", ""),
+            "explanation": sub.get("explanation", ""),
+            "source_url": row.get("source_url", ""),
+            "solution_image": sub.get("solution_image", ""),
+            "task_image": sub.get("task_image", ""),
+        }
+    except Exception:
+        return None
+
+
 async def get_ege_task(task_number: int, subtask: int | None = None) -> dict | None:
-    """Возвращает задание ЕГЭ по номеру (1–27). Для задания 8: subtask=1 (8.1) или 2 (8.2)."""
+    """Возвращает задание ЕГЭ по номеру (1–27). Для 8 и 11: subtask=1 (.X.1) или 2 (.X.2)."""
     if not (1 <= task_number <= 27):
         return None
     async with aiosqlite.connect(DB_PATH) as db:
@@ -376,23 +397,49 @@ async def get_ege_task(task_number: int, subtask: int | None = None) -> dict | N
             return None
         row = dict(row)
         if task_number == 8 and subtask == 2:
-            import json
-            raw = (row.get("subtasks") or "").strip()
-            if raw:
-                try:
-                    data = json.loads(raw)
-                    sub = data.get("2") or {}
-                    return {
-                        "task_number": 8,
-                        "title": sub.get("title", "Задача 8.2"),
-                        "example_solution": sub.get("example_solution", ""),
-                        "explanation": sub.get("explanation", ""),
-                        "source_url": row.get("source_url", ""),
-                        "solution_image": sub.get("solution_image", ""),
-                        "task_image": sub.get("task_image", ""),
-                    }
-                except Exception:
-                    pass
+            out = _subtask_row(8, row, 2, "Задача 8.2")
+            if out:
+                return out
+            return None
+        if task_number == 11 and subtask == 2:
+            out = _subtask_row(11, row, 2, "Задача 11.2")
+            if out:
+                return out
+            return None
+        if task_number == 14 and subtask == 2:
+            out = _subtask_row(14, row, 2, "Задача 14.2")
+            if out:
+                return out
+            return None
+        if task_number == 17 and subtask == 2:
+            out = _subtask_row(17, row, 2, "Задача 17.2")
+            if out:
+                return out
+            return None
+        if task_number == 19 and subtask == 2:
+            out = _subtask_row(19, row, 2, "Задача 19.2")
+            if out:
+                return out
+            return None
+        if task_number == 20 and subtask == 2:
+            out = _subtask_row(20, row, 2, "Задача 20.2")
+            if out:
+                return out
+            return None
+        if task_number == 21 and subtask == 2:
+            out = _subtask_row(21, row, 2, "Задача 21.2")
+            if out:
+                return out
+            return None
+        if task_number == 22 and subtask == 2:
+            out = _subtask_row(22, row, 2, "Задача 22.2")
+            if out:
+                return out
+            return None
+        if task_number == 24 and subtask == 2:
+            out = _subtask_row(24, row, 2, "Задача 24.2")
+            if out:
+                return out
             return None
         row.pop("subtasks", None)
         return row
@@ -446,6 +493,190 @@ async def set_ege_task_8_subtask(part: int, title: str = "", task_image: str = "
             "example_solution": example_solution or "",
         }
         await db.execute("UPDATE ege_tasks SET subtasks = ? WHERE task_number = 8", (json.dumps(data, ensure_ascii=False),))
+        await db.commit()
+
+
+async def set_ege_task_11_subtask(part: int, title: str = "", task_image: str = "", solution_image: str = "", example_solution: str = "") -> None:
+    """Обновляет подзадание 11.2 (part=2) в JSON subtasks строки task_number=11."""
+    if part != 2:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT subtasks FROM ege_tasks WHERE task_number = 11")
+        row = await cursor.fetchone()
+        import json
+        raw = (row[0] if row else "") or "{}"
+        try:
+            data = json.loads(raw)
+        except Exception:
+            data = {}
+        data["2"] = {
+            "title": title,
+            "task_image": task_image or "",
+            "solution_image": solution_image or "",
+            "example_solution": example_solution or "",
+        }
+        await db.execute("UPDATE ege_tasks SET subtasks = ? WHERE task_number = 11", (json.dumps(data, ensure_ascii=False),))
+        await db.commit()
+
+
+async def set_ege_task_14_subtask(part: int, title: str = "", task_image: str = "", solution_image: str = "", example_solution: str = "") -> None:
+    """Обновляет подзадание 14.2 (part=2) в JSON subtasks строки task_number=14."""
+    if part != 2:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT subtasks FROM ege_tasks WHERE task_number = 14")
+        row = await cursor.fetchone()
+        import json
+        raw = (row[0] if row else "") or "{}"
+        try:
+            data = json.loads(raw)
+        except Exception:
+            data = {}
+        data["2"] = {
+            "title": title,
+            "task_image": task_image or "",
+            "solution_image": solution_image or "",
+            "example_solution": example_solution or "",
+        }
+        await db.execute("UPDATE ege_tasks SET subtasks = ? WHERE task_number = 14", (json.dumps(data, ensure_ascii=False),))
+        await db.commit()
+
+
+async def set_ege_task_17_subtask(part: int, title: str = "", task_image: str = "", solution_image: str = "", example_solution: str = "") -> None:
+    """Обновляет подзадание 17.2 (part=2) в JSON subtasks строки task_number=17."""
+    if part != 2:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT subtasks FROM ege_tasks WHERE task_number = 17")
+        row = await cursor.fetchone()
+        import json
+        raw = (row[0] if row else "") or "{}"
+        try:
+            data = json.loads(raw)
+        except Exception:
+            data = {}
+        data["2"] = {
+            "title": title,
+            "task_image": task_image or "",
+            "solution_image": solution_image or "",
+            "example_solution": example_solution or "",
+        }
+        await db.execute("UPDATE ege_tasks SET subtasks = ? WHERE task_number = 17", (json.dumps(data, ensure_ascii=False),))
+        await db.commit()
+
+
+async def set_ege_task_19_subtask(part: int, title: str = "", task_image: str = "", solution_image: str = "", example_solution: str = "") -> None:
+    """Обновляет подзадание 19.2 (part=2) в JSON subtasks строки task_number=19."""
+    if part != 2:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT subtasks FROM ege_tasks WHERE task_number = 19")
+        row = await cursor.fetchone()
+        import json
+        raw = (row[0] if row else "") or "{}"
+        try:
+            data = json.loads(raw)
+        except Exception:
+            data = {}
+        data["2"] = {
+            "title": title,
+            "task_image": task_image or "",
+            "solution_image": solution_image or "",
+            "example_solution": example_solution or "",
+        }
+        await db.execute("UPDATE ege_tasks SET subtasks = ? WHERE task_number = 19", (json.dumps(data, ensure_ascii=False),))
+        await db.commit()
+
+
+async def set_ege_task_20_subtask(part: int, title: str = "", task_image: str = "", solution_image: str = "", example_solution: str = "") -> None:
+    """Обновляет подзадание 20.2 (part=2) в JSON subtasks строки task_number=20."""
+    if part != 2:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT subtasks FROM ege_tasks WHERE task_number = 20")
+        row = await cursor.fetchone()
+        import json
+        raw = (row[0] if row else "") or "{}"
+        try:
+            data = json.loads(raw)
+        except Exception:
+            data = {}
+        data["2"] = {
+            "title": title,
+            "task_image": task_image or "",
+            "solution_image": solution_image or "",
+            "example_solution": example_solution or "",
+        }
+        await db.execute("UPDATE ege_tasks SET subtasks = ? WHERE task_number = 20", (json.dumps(data, ensure_ascii=False),))
+        await db.commit()
+
+
+async def set_ege_task_21_subtask(part: int, title: str = "", task_image: str = "", solution_image: str = "", example_solution: str = "") -> None:
+    """Обновляет подзадание 21.2 (part=2) в JSON subtasks строки task_number=21."""
+    if part != 2:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT subtasks FROM ege_tasks WHERE task_number = 21")
+        row = await cursor.fetchone()
+        import json
+        raw = (row[0] if row else "") or "{}"
+        try:
+            data = json.loads(raw)
+        except Exception:
+            data = {}
+        data["2"] = {
+            "title": title,
+            "task_image": task_image or "",
+            "solution_image": solution_image or "",
+            "example_solution": example_solution or "",
+        }
+        await db.execute("UPDATE ege_tasks SET subtasks = ? WHERE task_number = 21", (json.dumps(data, ensure_ascii=False),))
+        await db.commit()
+
+
+async def set_ege_task_22_subtask(part: int, title: str = "", task_image: str = "", solution_image: str = "", example_solution: str = "") -> None:
+    """Обновляет подзадание 22.2 (part=2) в JSON subtasks строки task_number=22."""
+    if part != 2:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT subtasks FROM ege_tasks WHERE task_number = 22")
+        row = await cursor.fetchone()
+        import json
+        raw = (row[0] if row else "") or "{}"
+        try:
+            data = json.loads(raw)
+        except Exception:
+            data = {}
+        data["2"] = {
+            "title": title,
+            "task_image": task_image or "",
+            "solution_image": solution_image or "",
+            "example_solution": example_solution or "",
+        }
+        await db.execute("UPDATE ege_tasks SET subtasks = ? WHERE task_number = 22", (json.dumps(data, ensure_ascii=False),))
+        await db.commit()
+
+
+async def set_ege_task_24_subtask(part: int, title: str = "", task_image: str = "", solution_image: str = "", example_solution: str = "") -> None:
+    """Обновляет подзадание 24.2 (part=2) в JSON subtasks строки task_number=24."""
+    if part != 2:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT subtasks FROM ege_tasks WHERE task_number = 24")
+        row = await cursor.fetchone()
+        import json
+        raw = (row[0] if row else "") or "{}"
+        try:
+            data = json.loads(raw)
+        except Exception:
+            data = {}
+        data["2"] = {
+            "title": title,
+            "task_image": task_image or "",
+            "solution_image": solution_image or "",
+            "example_solution": example_solution or "",
+        }
+        await db.execute("UPDATE ege_tasks SET subtasks = ? WHERE task_number = 24", (json.dumps(data, ensure_ascii=False),))
         await db.commit()
 
 

@@ -483,7 +483,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             if not (1 <= num <= 27):
                 await query.edit_message_text("Некорректный номер задания.", reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN))
                 return
-            # По кнопке 8 без подтипа — спрашиваем: 8.1 или 8.2
+            # По кнопке 8 или 11 без подтипа — спрашиваем тип
             if num == 8 and subtask is None:
                 keyboard = [
                     [InlineKeyboardButton("Задача 8.1", callback_data="ege_task_8_1"), InlineKeyboardButton("Задача 8.2", callback_data="ege_task_8_2")],
@@ -492,6 +492,94 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 keyboard.extend(KEYBOARD_BACK_TO_MAIN)
                 await query.edit_message_text(
                     "📚 Задание 8. Выберите тип:",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                )
+                return
+            if num == 11 and subtask is None:
+                keyboard = [
+                    [InlineKeyboardButton("Задача 11.1", callback_data="ege_task_11_1"), InlineKeyboardButton("Задача 11.2", callback_data="ege_task_11_2")],
+                    [InlineKeyboardButton("📚 К списку заданий", callback_data="student_ege")],
+                ]
+                keyboard.extend(KEYBOARD_BACK_TO_MAIN)
+                await query.edit_message_text(
+                    "📚 Задание 11. Выберите тип:",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                )
+                return
+            if num == 14 and subtask is None:
+                keyboard = [
+                    [InlineKeyboardButton("Задача 14.1", callback_data="ege_task_14_1"), InlineKeyboardButton("Задача 14.2", callback_data="ege_task_14_2")],
+                    [InlineKeyboardButton("📚 К списку заданий", callback_data="student_ege")],
+                ]
+                keyboard.extend(KEYBOARD_BACK_TO_MAIN)
+                await query.edit_message_text(
+                    "📚 Задание 14. Выберите тип:",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                )
+                return
+            if num == 17 and subtask is None:
+                keyboard = [
+                    [InlineKeyboardButton("Задача 17.1", callback_data="ege_task_17_1"), InlineKeyboardButton("Задача 17.2", callback_data="ege_task_17_2")],
+                    [InlineKeyboardButton("📚 К списку заданий", callback_data="student_ege")],
+                ]
+                keyboard.extend(KEYBOARD_BACK_TO_MAIN)
+                await query.edit_message_text(
+                    "📚 Задание 17. Выберите тип:",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                )
+                return
+            if num == 19 and subtask is None:
+                keyboard = [
+                    [InlineKeyboardButton("Задача 19.1", callback_data="ege_task_19_1"), InlineKeyboardButton("Задача 19.2", callback_data="ege_task_19_2")],
+                    [InlineKeyboardButton("📚 К списку заданий", callback_data="student_ege")],
+                ]
+                keyboard.extend(KEYBOARD_BACK_TO_MAIN)
+                await query.edit_message_text(
+                    "📚 Задание 19. Выберите тип:",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                )
+                return
+            if num == 20 and subtask is None:
+                keyboard = [
+                    [InlineKeyboardButton("Задача 20.1", callback_data="ege_task_20_1"), InlineKeyboardButton("Задача 20.2", callback_data="ege_task_20_2")],
+                    [InlineKeyboardButton("📚 К списку заданий", callback_data="student_ege")],
+                ]
+                keyboard.extend(KEYBOARD_BACK_TO_MAIN)
+                await query.edit_message_text(
+                    "📚 Задание 20. Выберите тип:",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                )
+                return
+            if num == 21 and subtask is None:
+                keyboard = [
+                    [InlineKeyboardButton("Задача 21.1", callback_data="ege_task_21_1"), InlineKeyboardButton("Задача 21.2", callback_data="ege_task_21_2")],
+                    [InlineKeyboardButton("📚 К списку заданий", callback_data="student_ege")],
+                ]
+                keyboard.extend(KEYBOARD_BACK_TO_MAIN)
+                await query.edit_message_text(
+                    "📚 Задание 21. Выберите тип:",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                )
+                return
+            if num == 22 and subtask is None:
+                keyboard = [
+                    [InlineKeyboardButton("Задача 22.1", callback_data="ege_task_22_1"), InlineKeyboardButton("Задача 22.2", callback_data="ege_task_22_2")],
+                    [InlineKeyboardButton("📚 К списку заданий", callback_data="student_ege")],
+                ]
+                keyboard.extend(KEYBOARD_BACK_TO_MAIN)
+                await query.edit_message_text(
+                    "📚 Задание 22. Выберите тип:",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                )
+                return
+            if num == 24 and subtask is None:
+                keyboard = [
+                    [InlineKeyboardButton("Задача 24.1", callback_data="ege_task_24_1"), InlineKeyboardButton("Задача 24.2", callback_data="ege_task_24_2")],
+                    [InlineKeyboardButton("📚 К списку заданий", callback_data="student_ege")],
+                ]
+                keyboard.extend(KEYBOARD_BACK_TO_MAIN)
+                await query.edit_message_text(
+                    "📚 Задание 24. Выберите тип:",
                     reply_markup=InlineKeyboardMarkup(keyboard),
                 )
                 return
@@ -514,23 +602,28 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 keyboard.extend(KEYBOARD_BACK_TO_MAIN)
                 await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard))
                 return
-            label = f"{num}.{subtask}" if (num == 8 and subtask) else str(num)
+            label = f"{num}.{subtask}" if ((num in (8, 11, 14, 17, 19, 20, 21, 22, 24)) and subtask) else str(num)
             title = (task.get("title") or "").strip() or f"Задание {label}"
             chat_id = query.message.chat_id
             task_image = (task.get("task_image") or "").strip()
-            solution_callback = f"ege_show_solution_{num}_{subtask}" if (num == 8 and subtask) else f"ege_show_solution_{num}"
-            if task_image:
-                try:
-                    if task_image.startswith("http://") or task_image.startswith("https://"):
-                        await context.bot.send_photo(chat_id=chat_id, photo=task_image, caption=f"📋 Задание {label}. {title}")
-                    else:
-                        root = Path(__file__).parent
-                        path = root / task_image
-                        if path.is_file():
-                            with open(path, "rb") as f:
-                                await context.bot.send_photo(chat_id=chat_id, photo=InputFile(f, filename=path.name), caption=f"📋 Задание {label}. {title}")
-                except Exception as e:
-                    logger.warning("ege_task_%s: не удалось отправить фото задания: %s", label, e)
+            solution_callback = f"ege_show_solution_{num}_{subtask}" if ((num in (8, 11, 14, 17, 19, 20, 21, 22, 24)) and subtask) else f"ege_show_solution_{num}"
+            # Несколько фото задания (через "|"): отправляем подряд
+            task_images = [p.strip() for p in task_image.split("|") if p.strip()]
+            if task_images:
+                root = Path(__file__).parent
+                for idx, one in enumerate(task_images):
+                    try:
+                        if one.startswith("http://") or one.startswith("https://"):
+                            cap = f"📋 Задание {label}. {title}" if idx == 0 else f"📋 Задание {label} (продолжение)"
+                            await context.bot.send_photo(chat_id=chat_id, photo=one, caption=cap)
+                        else:
+                            path = root / one
+                            if path.is_file():
+                                cap = f"📋 Задание {label}. {title}" if idx == 0 else f"📋 Задание {label} (продолжение)"
+                                with open(path, "rb") as f:
+                                    await context.bot.send_photo(chat_id=chat_id, photo=InputFile(f, filename=path.name), caption=cap)
+                    except Exception as e:
+                        logger.warning("ege_task_%s фото %s: %s", label, idx, e)
             msg = f"📚 Задание {label}. {title}\n\n👇 Нажмите кнопку ниже, чтобы получить решение."
             keyboard = [
                 [InlineKeyboardButton("📎 Показать решение", callback_data=solution_callback)],
@@ -560,7 +653,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 await query.answer("Задание не найдено.", show_alert=True)
                 return
             example = (task.get("example_solution") or "").strip()
-            solution_image = (task.get("solution_image") or "").strip()
+            solution_image_raw = (task.get("solution_image") or "").strip()
+            # Несколько скринов решений через "|" (например для задания 18)
+            solution_images = [p.strip() for p in solution_image_raw.split("|") if p.strip()]
+            solution_image = solution_images[0] if solution_images else ""
             chat_id = query.message.chat_id
 
             def _send_back_to_tasks():
@@ -594,38 +690,41 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     code_html = _format_homework_reply_for_telegram(f"Решение (код):\n\n{example}")[0]
                     await context.bot.send_message(chat_id=chat_id, text=code_html, parse_mode="HTML")
                 # Скрин с текстом к решению только у задания 2; у 5 и 6 — только код
-                if solution_image and num == 2:
+                # Скрин с текстом/Excel только у заданий 2 и 9; у 5 и 6 — только код
+                if solution_image and (num == 2 or num == 9 or num == 13):
                     try:
                         root = Path(__file__).parent
                         path = root / solution_image if not solution_image.startswith("http") else None
+                        cap = "📎 Решение через Excel (скрин)." if num == 9 else "📎 Текст к решению (скрин)."
                         if path and path.is_file():
                             with open(path, "rb") as f:
                                 await context.bot.send_photo(
                                     chat_id=chat_id,
                                     photo=InputFile(f, filename=path.name),
-                                    caption="📎 Текст к решению (скрин).",
+                                    caption=cap,
                                 )
                         elif solution_image.startswith("http"):
-                            await context.bot.send_photo(chat_id=chat_id, photo=solution_image, caption="📎 Текст к решению (скрин).")
+                            await context.bot.send_photo(chat_id=chat_id, photo=solution_image, caption=cap)
                     except Exception as e:
                         logger.warning("ege_show_solution_%s image: %s", num, e)
                 await _send_back_to_tasks()
                 await query.answer("Решение отправлено.")
                 return
 
-            if solution_image:
+            if solution_images:
                 try:
-                    if solution_image.startswith("http://") or solution_image.startswith("https://"):
-                        await context.bot.send_photo(chat_id=chat_id, photo=solution_image, caption=f"📎 Решение. Задание {num}")
-                    else:
-                        root = Path(__file__).parent
-                        path = root / solution_image
-                        if path.is_file():
-                            with open(path, "rb") as f:
-                                await context.bot.send_photo(chat_id=chat_id, photo=InputFile(f, filename=path.name), caption=f"📎 Решение. Задание {num}")
+                    root = Path(__file__).parent
+                    for idx, one in enumerate(solution_images):
+                        cap = f"📎 Решение. Задание {num}" if idx == 0 else f"📎 Решение. Задание {num} (продолжение)"
+                        if one.startswith("http://") or one.startswith("https://"):
+                            await context.bot.send_photo(chat_id=chat_id, photo=one, caption=cap)
                         else:
-                            await query.answer("Файл решения не найден.", show_alert=True)
-                            return
+                            path = root / one
+                            if path.is_file():
+                                with open(path, "rb") as f:
+                                    await context.bot.send_photo(chat_id=chat_id, photo=InputFile(f, filename=path.name), caption=cap)
+                            else:
+                                logger.warning("ege_show_solution_%s image %s not found: %s", num, idx, one)
                     await _send_back_to_tasks()
                     await query.answer("Решение отправлено.")
                 except Exception as e:
