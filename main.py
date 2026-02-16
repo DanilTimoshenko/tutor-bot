@@ -43,7 +43,18 @@ def main() -> None:
                 "имя переменной точно BOT_TOKEN, значение скопировано из @BotFather целиком (без кавычек и пробелов)."
             ) from e
         raise
-    app.bot_data["tutor_user_id"] = config.TUTOR_USER_ID
+    _tid = config.TUTOR_USER_ID
+    _aid = getattr(config, "ADMIN_USER_ID", None) or _tid
+    _tids = getattr(config, "TUTOR_USER_IDS", None)
+    if _tids is None:
+        _tids = {_tid}
+    else:
+        _tids = set(_tids) if not isinstance(_tids, set) else _tids
+        if _aid not in _tids:
+            _tids = set(_tids) | {_aid}
+    app.bot_data["tutor_user_id"] = _tid
+    app.bot_data["admin_user_id"] = _aid
+    app.bot_data["tutor_user_ids"] = _tids
     app.bot_data["bot_title"] = getattr(config, "BOT_TITLE", None)
     app.bot_data["materials_channel_link"] = getattr(config, "MATERIALS_CHANNEL_LINK", None)
     _yandex_key = (getattr(config, "YANDEX_API_KEY", None) or "").strip()

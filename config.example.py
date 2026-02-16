@@ -4,9 +4,13 @@
 # Токен бота от @BotFather в Telegram
 BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
 
-# Telegram ID репетитора (только этот пользователь может создавать уроки)
-# Узнать свой ID: напиши боту @userinfobot в Telegram
+# Telegram ID администратора (только этот пользователь — админ; может добавлять репетиторов)
+ADMIN_USER_ID = 123456789
+
+# Telegram ID репетитора (для обратной совместимости = один репетитор). Или список репетиторов:
+# TUTOR_USER_IDS = [123456789, 987654321]  # админ + другие репетиторы
 TUTOR_USER_ID = 123456789
+TUTOR_USER_IDS = None  # если None — считаем репетиторами только [TUTOR_USER_ID]; иначе список ID
 
 # Название в приветствии (например "Timoshenko's Atelier"). Можно None
 BOT_TITLE = None

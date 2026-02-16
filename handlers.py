@@ -24,12 +24,21 @@ def _clear_other_flows(context: ContextTypes.DEFAULT_TYPE, keep: str) -> None:
             context.user_data.pop(key, None)
 
 
-def is_tutor(user_id: int, tutor_user_id: int) -> bool:
-    """Только этот пользователь — репетитор; все остальные — ученики."""
-    return user_id == tutor_user_id
+def _tutor_ids(bot_data) -> set:
+    return bot_data.get("tutor_user_ids") or {bot_data.get("tutor_user_id")}
 
 
-MSG_ONLY_TUTOR = "Вы зашли как ученик. Команды репетитора доступны только автору бота. Используйте /lessons и /my."
+def is_tutor(user_id: int, bot_data) -> bool:
+    """Репетитор: админ или в списке TUTOR_USER_IDS."""
+    return user_id in _tutor_ids(bot_data)
+
+
+def is_admin(user_id: int, bot_data) -> bool:
+    """Только администратор (ADMIN_USER_ID)."""
+    return user_id == bot_data.get("admin_user_id")
+
+
+MSG_ONLY_TUTOR = "Вы зашли как ученик. Команды репетитора доступны только репетиторам. Используйте /lessons и /my."
 
 
 def format_lesson(lesson: dict, with_id: bool = False) -> str:
@@ -59,11 +68,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Я бот записи на уроки — {title}.\n\n"
         "Выберите действие:"
     )
-    if is_tutor(user.id, context.bot_data["tutor_user_id"]):
-        text += (
-            "\n\n━━━━━━━━━━━━━━━━━━━━\n"
-            "👩‍🏫 Режим репетитора"
-        )
+    if is_tutor(user.id, context.bot_data):
+        if is_admin(user.id, context.bot_data):
+            text += (
+                "\n\n━━━━━━━━━━━━━━━━━━━━\n"
+                "👑 Режим администратора"
+            )
+        else:
+            text += (
+                "\n\n━━━━━━━━━━━━━━━━━━━━\n"
+                "👩‍🏫 Режим репетитора"
+            )
         keyboard = [
             [InlineKeyboardButton("✏️ Создать урок", callback_data="tutor_add_lesson")],
             [InlineKeyboardButton("📅 Расписание", callback_data="tutor_schedule")],
@@ -71,6 +86,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             [InlineKeyboardButton("👀 Как видят ученики", callback_data="tutor_preview_student")],
             [InlineKeyboardButton("💬 Как очистить чат", callback_data="tutor_clear_chat_help")],
         ]
+        if is_admin(user.id, context.bot_data):
+            keyboard.append([InlineKeyboardButton("➕ Добавить репетитора", callback_data="admin_add_tutor")])
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
         return
     # Кнопки для учеников
@@ -116,9 +133,10 @@ async def homework_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text(
             "Произошла ошибка при запросе. Попробуй ещё раз или нажми /start.",
         )
-        context.user_data.pop("homework_help", None)
+        await update.message.reply_text(
+            "💬 Задай следующий вопрос или нажми /start — вернуться в меню.",
+        )
         return True
-    context.user_data.pop("homework_help", None)
     if reply:
         if len(reply) > 4000:
             reply = reply[:3990] + "\n\n… (ответ обрезан)"
@@ -132,6 +150,9 @@ async def homework_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             await update.message.reply_text(
                 "Не удалось получить ответ. Проверь, что у репетитора заданы YANDEX_API_KEY и YANDEX_FOLDER_ID в Railway Variables, или попробуй позже.",
             )
+    await update.message.reply_text(
+        "💬 Задай следующий вопрос или нажми /start — вернуться в меню.",
+    )
     return True
 
 
@@ -343,8 +364,22 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 "Для выхода нажми /start.",
             )
 
+        elif data == "admin_add_tutor":
+            if not is_admin(user_id, context.bot_data):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            await query.edit_message_text(
+                "➕ Добавить репетитора\n\n"
+                "Сейчас репетиторов задают в настройках бота (Railway Variables или config.py).\n\n"
+                "Чтобы добавить репетитора по его Telegram ID:\n"
+                "• В Railway: переменная TUTOR_USER_IDS — перечисли ID через запятую, например:\n"
+                "  2071587097,123456789\n"
+                "  (твой ID уже считается репетитором как админ). После изменения сделай Redeploy.\n\n"
+                "Когда будет готова команда добавления из бота — подскажешь, добавлю.",
+            )
+
         elif data == "tutor_add_lesson":
-            if not is_tutor(user_id, tutor_id):
+            if not is_tutor(user_id, context.bot_data):
                 await query.edit_message_text(MSG_ONLY_TUTOR)
                 return
             _clear_other_flows(context, "add_lesson")
@@ -357,14 +392,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
 
         elif data == "tutor_schedule":
-            if not is_tutor(user_id, tutor_id):
+            if not is_tutor(user_id, context.bot_data):
                 await query.edit_message_text(MSG_ONLY_TUTOR)
                 return
             text, reply_markup = await _build_schedule_message(context)
             await query.edit_message_text(text, reply_markup=reply_markup)
 
         elif data == "tutor_schedule_set_range":
-            if not is_tutor(user_id, tutor_id):
+            if not is_tutor(user_id, context.bot_data):
                 await query.edit_message_text(MSG_ONLY_TUTOR)
                 return
             _clear_other_flows(context, "schedule_range_input")
@@ -375,7 +410,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
 
         elif data == "tutor_schedule_clear_range":
-            if not is_tutor(user_id, tutor_id):
+            if not is_tutor(user_id, context.bot_data):
                 await query.edit_message_text(MSG_ONLY_TUTOR)
                 return
             try:
@@ -399,7 +434,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     )
 
         elif data == "tutor_summary":
-            if not is_tutor(user_id, tutor_id):
+            if not is_tutor(user_id, context.bot_data):
                 await query.edit_message_text(MSG_ONLY_TUTOR)
                 return
             tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -407,7 +442,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await query.edit_message_text(_format_summary(tomorrow, lessons))
 
         elif data == "tutor_clear_schedule":
-            if not is_tutor(user_id, tutor_id):
+            if not is_tutor(user_id, context.bot_data):
                 await query.edit_message_text(MSG_ONLY_TUTOR)
                 return
             keyboard = [
@@ -421,7 +456,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
 
         elif data == "tutor_clear_schedule_confirm":
-            if not is_tutor(user_id, tutor_id):
+            if not is_tutor(user_id, context.bot_data):
                 await query.edit_message_text(MSG_ONLY_TUTOR)
                 return
             lesson_ids = await db.get_all_lesson_ids()
@@ -441,7 +476,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
 
         elif data == "tutor_clear_chat_help":
-            if not is_tutor(user_id, tutor_id):
+            if not is_tutor(user_id, context.bot_data):
                 await query.edit_message_text(MSG_ONLY_TUTOR)
                 return
             await query.answer()
@@ -453,13 +488,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
 
         elif data == "tutor_clear_schedule_cancel":
-            if not is_tutor(user_id, tutor_id):
+            if not is_tutor(user_id, context.bot_data):
                 await query.edit_message_text(MSG_ONLY_TUTOR)
                 return
             await _refresh_schedule_message(query, context)
 
         elif data == "tutor_block_slot":
-            if not is_tutor(user_id, tutor_id):
+            if not is_tutor(user_id, context.bot_data):
                 await query.edit_message_text(MSG_ONLY_TUTOR)
                 return
             # Не сбрасывать диалог, если уже идёт — иначе случайное нажатие кнопки обнуляет ввод
@@ -480,7 +515,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
 
         elif data.startswith("unblock_"):
-            if not is_tutor(user_id, tutor_id):
+            if not is_tutor(user_id, context.bot_data):
                 await query.edit_message_text(MSG_ONLY_TUTOR)
                 return
             slot_id = int(data.split("_")[1])
@@ -491,7 +526,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 await query.edit_message_text("Не удалось снять слот.")
 
         elif data == "tutor_preview_student":
-            if not is_tutor(user_id, tutor_id):
+            if not is_tutor(user_id, context.bot_data):
                 await query.edit_message_text(MSG_ONLY_TUTOR)
                 return
             title = context.bot_data.get("bot_title") or "Репетитор"
@@ -570,7 +605,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         elif data.startswith("tutor_bookings_"):
             lesson_id = int(data.split("_")[2])
-            if not is_tutor(user_id, tutor_id):
+            if not is_tutor(user_id, context.bot_data):
                 await query.edit_message_text(MSG_ONLY_TUTOR)
                 return
             bookings = await db.get_bookings_for_lesson(lesson_id)
@@ -583,7 +618,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         elif data.startswith("tutor_del_"):
             lesson_id = int(data.split("_")[2])
-            if not is_tutor(user_id, tutor_id):
+            if not is_tutor(user_id, context.bot_data):
                 await query.edit_message_text(MSG_ONLY_TUTOR)
                 return
             ok, lesson, user_ids = await db.delete_lesson(lesson_id)
@@ -815,7 +850,7 @@ async def _do_create_lessons(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
 
 async def add_lesson_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not is_tutor(update.effective_user.id, context.bot_data["tutor_user_id"]):
+    if not is_tutor(update.effective_user.id, context.bot_data):
         await update.message.reply_text(MSG_ONLY_TUTOR)
         return
     _clear_other_flows(context, "add_lesson")
@@ -830,7 +865,7 @@ async def add_lesson_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 async def add_lesson_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    if not is_tutor(user_id, context.bot_data["tutor_user_id"]):
+    if not is_tutor(user_id, context.bot_data):
         return
     data = context.user_data.get("add_lesson")
     if not data:
@@ -986,7 +1021,7 @@ def _format_summary(tomorrow: str, lessons: list) -> str:
 
 async def summary_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Сводка на завтра для репетитора."""
-    if not is_tutor(update.effective_user.id, context.bot_data["tutor_user_id"]):
+    if not is_tutor(update.effective_user.id, context.bot_data):
         await update.message.reply_text(MSG_ONLY_TUTOR)
         return
     tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -1084,7 +1119,7 @@ async def _build_schedule_message(context: ContextTypes.DEFAULT_TYPE):
 
 
 async def schedule_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not is_tutor(update.effective_user.id, context.bot_data["tutor_user_id"]):
+    if not is_tutor(update.effective_user.id, context.bot_data):
         await update.message.reply_text(MSG_ONLY_TUTOR)
         return
     text, reply_markup = await _build_schedule_message(context)

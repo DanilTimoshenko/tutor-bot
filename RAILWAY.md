@@ -48,7 +48,9 @@
 | Переменная        | Обязательно | Пример              |
 |-------------------|-------------|----------------------|
 | `BOT_TOKEN`       | да          | токен от @BotFather  |
-| `TUTOR_USER_ID`   | да          | твой Telegram ID    |
+| `TUTOR_USER_ID`   | да          | твой Telegram ID (для обратной совместимости) |
+| `ADMIN_USER_ID`   | нет         | Telegram ID админа (если нет — берётся TUTOR_USER_ID) |
+| `TUTOR_USER_IDS`  | нет         | ID репетиторов через запятую, например `2071587097,123456789` |
 | `DATABASE_PATH`   | для Volume  | `/data/tutor_bot.db` |
 | `YANDEX_API_KEY`   | для «Помощь с домашкой» | API-ключ Yandex Cloud |
 | `YANDEX_FOLDER_ID` | для «Помощь с домашкой» | ID каталога в Yandex Cloud |

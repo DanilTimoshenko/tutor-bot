@@ -10,11 +10,28 @@ except ModuleNotFoundError:
     import sys
     # Нет config.py — читаем из окружения (деплой на Railway и др.)
     _uid = os.environ.get("TUTOR_USER_ID", "0")
+    _admin_uid = os.environ.get("ADMIN_USER_ID", "").strip() or _uid
+    _tutor_ids_raw = os.environ.get("TUTOR_USER_IDS", "").strip()
     _h = os.environ.get("SUMMARY_DAILY_HOUR", "")
     try:
         _tutor_id = int(_uid)
     except (ValueError, TypeError):
         _tutor_id = 0
+    try:
+        _admin_id = int(_admin_uid)
+    except (ValueError, TypeError):
+        _admin_id = _tutor_id
+    _tutor_ids = set()
+    if _tutor_ids_raw:
+        for part in _tutor_ids_raw.replace(",", " ").split():
+            try:
+                _tutor_ids.add(int(part.strip()))
+            except (ValueError, TypeError):
+                pass
+    if not _tutor_ids:
+        _tutor_ids = {_tutor_id}
+    if _admin_id not in _tutor_ids:
+        _tutor_ids.add(_admin_id)
 
     _token_raw = os.environ.get("BOT_TOKEN", "")
     if not _token_raw or not _token_raw.strip():
@@ -38,6 +55,8 @@ except ModuleNotFoundError:
     class config:  # noqa: A001
         BOT_TOKEN = (_token_raw or "").strip()
         TUTOR_USER_ID = _tutor_id
+        ADMIN_USER_ID = _admin_id
+        TUTOR_USER_IDS = _tutor_ids
         BOT_TITLE = os.environ.get("BOT_TITLE") or None
         MATERIALS_CHANNEL_LINK = os.environ.get("MATERIALS_CHANNEL_LINK") or None
         CHANNEL_ID = os.environ.get("CHANNEL_ID") or None
