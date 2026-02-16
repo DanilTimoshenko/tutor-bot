@@ -515,14 +515,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                                 await context.bot.send_photo(chat_id=chat_id, photo=InputFile(f, filename=path.name), caption=f"📋 Задание {num}. {title}")
                 except Exception as e:
                     logger.warning("ege_task_%s: не удалось отправить фото задания: %s", num, e)
-            # Сообщение с кнопкой «Показать решение»
-            msg = f"📚 Задание {num}. {title}\n\nНажми кнопку ниже, чтобы получить решение."
+            # Кнопку «Показать решение» шлём отдельным сообщением, чтобы её было видно сразу под заданием
+            msg = f"📚 Задание {num}. {title}\n\n👇 Нажмите кнопку ниже, чтобы получить решение."
             keyboard = [
                 [InlineKeyboardButton("📎 Показать решение", callback_data=f"ege_show_solution_{num}")],
                 [InlineKeyboardButton("📚 К списку заданий", callback_data="student_ege")],
             ]
             keyboard.extend(KEYBOARD_BACK_TO_MAIN)
-            await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard))
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=msg,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+            await query.edit_message_text(f"Задание {num} открыто. 👇 Решение — в сообщении ниже.")
 
         elif data.startswith("ege_show_solution_"):
             try:
@@ -539,19 +544,56 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             example = (task.get("example_solution") or "").strip()
             solution_image = (task.get("solution_image") or "").strip()
             chat_id = query.message.chat_id
-            # Решение-код выдаём текстом, иначе — фото
+
+            def _send_back_to_tasks():
+                kbd = [
+                    [InlineKeyboardButton("📚 К списку заданий", callback_data="student_ege")],
+                ]
+                kbd.extend(KEYBOARD_BACK_TO_MAIN)
+                return context.bot.send_message(
+                    chat_id=chat_id,
+                    text="Можно вернуться к списку заданий или на главную.",
+                    reply_markup=InlineKeyboardMarkup(kbd),
+                )
+
             def _looks_like_code(t: str) -> bool:
                 if not t or len(t) < 20:
                     return False
                 t = t.lower()
-                return ("def " in t or "for " in t or "while " in t) and ("print(" in t or "return " in t or "range(" in t)
+                return ("def " in t or "for " in t or "while " in t or "in range(" in t) and (
+                    "print(" in t or "return " in t or "range(" in t
+                )
+
+            # Решение-код: выводим в блоке ``` и затем при наличии — скрин с текстом
             if example and _looks_like_code(example):
-                code_html = _format_homework_reply_for_telegram(f"Решение (код):\n\n{example}")[0]
-                if len(code_html) > 4000:
-                    code_html = code_html[:3990] + "\n\n… (обрезано)"
-                await context.bot.send_message(chat_id=chat_id, text=code_html, parse_mode="HTML")
-                await query.answer("Решение отправлено текстом.")
+                code_msg = "Решение (код):\n\n```python\n" + example + "\n```"
+                if len(code_msg) > 4000:
+                    code_msg = code_msg[:3980] + "\n\n… (обрезано)\n```"
+                try:
+                    await context.bot.send_message(chat_id=chat_id, text=code_msg, parse_mode="Markdown")
+                except Exception as e:
+                    logger.warning("ege_show_solution markdown failed, fallback to HTML: %s", e)
+                    code_html = _format_homework_reply_for_telegram(f"Решение (код):\n\n{example}")[0]
+                    await context.bot.send_message(chat_id=chat_id, text=code_html, parse_mode="HTML")
+                if solution_image:
+                    try:
+                        root = Path(__file__).parent
+                        path = root / solution_image if not solution_image.startswith("http") else None
+                        if path and path.is_file():
+                            with open(path, "rb") as f:
+                                await context.bot.send_photo(
+                                    chat_id=chat_id,
+                                    photo=InputFile(f, filename=path.name),
+                                    caption="📎 Текст к решению (скрин).",
+                                )
+                        elif solution_image.startswith("http"):
+                            await context.bot.send_photo(chat_id=chat_id, photo=solution_image, caption="📎 Текст к решению (скрин).")
+                    except Exception as e:
+                        logger.warning("ege_show_solution_%s image: %s", num, e)
+                await _send_back_to_tasks()
+                await query.answer("Решение отправлено.")
                 return
+
             if solution_image:
                 try:
                     if solution_image.startswith("http://") or solution_image.startswith("https://"):
@@ -565,18 +607,21 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                         else:
                             await query.answer("Файл решения не найден.", show_alert=True)
                             return
+                    await _send_back_to_tasks()
                     await query.answer("Решение отправлено.")
                 except Exception as e:
                     logger.warning("ege_show_solution_%s: %s", num, e)
                     await query.answer("Не удалось отправить фото.", show_alert=True)
-            elif example:
+                return
+            if example:
                 body_html, parse_mode = _format_homework_reply_for_telegram(f"Решение:\n\n{example}")
                 if len(body_html) > 4000:
                     body_html = body_html[:3990] + "\n\n… (обрезано)"
                 await context.bot.send_message(chat_id=chat_id, text=body_html, parse_mode=parse_mode)
+                await _send_back_to_tasks()
                 await query.answer("Решение отправлено.")
-            else:
-                await query.answer("Решение для этого задания не добавлено.", show_alert=True)
+                return
+            await query.answer("Решение для этого задания не добавлено.", show_alert=True)
 
         elif data == "admin_add_tutor":
             if not is_admin(user_id, context.bot_data):

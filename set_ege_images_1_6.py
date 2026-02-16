@@ -90,7 +90,8 @@ async def fill_ege_tasks_1_6() -> None:
     """Заполняет задания 1–6: task_image, solution_image, код решений для 2, 5, 6."""
     for num in range(1, 7):
         task_image = f"ege_images/{num}_task.png"
-        solution_image = f"ege_images/{num}_solution.png"
+        # У задания 2 — скрин с текстом к решению (объяснение + «Ответ: wxzy»); код в example_solution
+        solution_image = f"ege_images/2_solution_text.png" if num == 2 else f"ege_images/{num}_solution.png"
         example = ""
         if num == 2:
             example = TASK_2_CODE
@@ -110,11 +111,19 @@ async def fill_ege_tasks_1_6() -> None:
 
 
 async def ensure_ege_tasks_1_6() -> None:
-    """При старте бота: если задание 1 без task_image — заполняет 1–6. Чтобы задания 1–6 всегда были с фото и решением."""
-    task1 = await db.get_ege_task(1)
-    if task1 and (task1.get("task_image") or "").strip():
-        return
-    await fill_ege_tasks_1_6()
+    """При старте бота: если у любого из заданий 1–6 нет условия или решения — заполняет 1–6 заново."""
+    for num in range(1, 7):
+        task = await db.get_ege_task(num)
+        if not task:
+            await fill_ege_tasks_1_6()
+            return
+        ti = (task.get("task_image") or "").strip()
+        si = (task.get("solution_image") or "").strip()
+        ex = (task.get("example_solution") or "").strip()
+        if not ti or (not si and not ex):
+            await fill_ege_tasks_1_6()
+            return
+    return
 
 
 async def main() -> None:
