@@ -29,7 +29,7 @@ async def ask_homework(user_text: str, api_key: str, folder_id: str = "") -> str
         return None
     if len(user_text.strip()) < 2:
         return None
-    model_uri = f"gpt://{folder_id}/yandexgpt-lite/latest"
+    model_uri = f"gpt://{folder_id}/yandexgpt/latest"
     payload = {
         "modelUri": model_uri,
         "completionOptions": {
