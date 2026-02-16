@@ -132,6 +132,8 @@ EGE_TITLES = {
     22: "Задача 22.1 — процессы, сколько одновременно в 14 мс",
     23: "Исполнитель: −3 и :3, траектория через 27",
     24: "Задача 24.1 — строка D и 50 цифр",
+    26: "Задача 26.1 — матрёшка красные/зелёные коробки",
+    27: "Задача 27.1 — кластеризация звёзд, два кластера (Файлы A и B)",
 }
 
 # Задание 18: решение — несколько скринов (таблица, ДП макс/мин). Пути через "|".
@@ -335,6 +337,239 @@ print(len(max(res, key=len)) if res else 0)
 #             if s[j] in '13579':
 #                 break
 # print(ans)"""
+
+# 26.1 — матрёшка: N красных, M зелёных, чередование цветов, разница сторон >= 5. Макс число коробок и макс размер наименьшей.
+TASK_26_1_CODE = """f = open("26.txt")
+first_line = f.readline().strip()
+n, m = map(int, first_line.split())
+red_boxes = []
+green_boxes = []
+for i in range(m):
+    line = f.readline().strip()
+    parts = line.split()
+    red_boxes.append(int(parts[0]))
+    green_boxes.append(int(parts[1]))
+for i in range(n - m):
+    line = f.readline()
+    red_boxes.append(int(line))
+all_boxes = []
+for size in red_boxes:
+    all_boxes.append((size, 0))
+for size in green_boxes:
+    all_boxes.append((size, 1))
+all_boxes.sort(reverse=True)
+max_boxes = 0
+max_min_size = 0
+for start in range(len(all_boxes)):
+    matryoshka = [all_boxes[start]]
+    current_size, current_color = all_boxes[start][0], all_boxes[start][1]
+    for i in range(start + 1, len(all_boxes)):
+        next_size, next_color = all_boxes[i]
+        if current_size - next_size >= 5 and next_color != current_color:
+            matryoshka.append(all_boxes[i])
+            current_size, current_color = next_size, next_color
+    if len(matryoshka) > max_boxes:
+        max_boxes = len(matryoshka)
+        max_min_size = matryoshka[-1][0]
+    elif len(matryoshka) == max_boxes and matryoshka[-1][0] > max_min_size:
+        max_min_size = matryoshka[-1][0]
+print(max_boxes, max_min_size)"""
+
+# 26.2 — конференция: макс число непересекающихся мероприятий, самое раннее начало последнего.
+TASK_26_2_CODE = """f = open('3_26_conf.txt')
+n = int(f.readline())
+confs = [list(map(int, i.split())) for i in f]
+confs.sort(key=lambda x: (x[1], x[0]))
+prev_end = 0
+last_end = confs[0][1]
+last_starts = [confs[0][0]]
+cnt = 1
+for start, end in confs:
+    if start >= last_end:
+        cnt += 1
+        prev_end = last_end
+        last_end = end
+        last_starts = [start]
+    else:
+        last_starts.append(start)
+print(cnt, min([i for i in last_starts if i >= prev_end]))"""
+
+# 26.3 — детали: шлифовка/окрашивание, конвейер. Сколько окрашено и номер последней отшлифованной.
+TASK_26_3_CODE = """f = open('26_12.txt')
+n = int(f.readline())
+a = [list(map(int, i.split())) for i in f]
+t = []
+for i in range(n):
+    if a[i][0] > a[i][1]:
+        t.append((a[i][0], 1, i))
+    else:
+        t.append((a[i][1], 2, i))
+t.sort()
+line_start = []
+line_end = []
+for i in t:
+    if i[1] == 2:
+        line_start.append(i)
+    else:
+        line_end.append(i)
+print(len(line_start))
+print(line_end[-1][2])"""
+
+# 26.4 — камера хранения: K ячеек, стоимость m. Выручка и номер последней занятой ячейки.
+TASK_26_4_CODE = """f = open("26.txt")
+k, m = map(int, f.readline().split())
+n = int(f.readline())
+a = [list(map(int, i.split())) for i in f]
+a.sort()
+cells = [0] * k
+cnt = 0
+last_cell = -1
+for start_time, end_time in a:
+    for i in range(k):
+        if cells[i] <= start_time:
+            cells[i] = end_time
+            cnt += 1
+            last_cell = i + 1
+            break
+revenue = cnt * m
+print(revenue, last_cell)"""
+
+# 26.5 — контейнеры: макс M кг, грузы по убыванию. Число контейнеров и сумма во втором с конца.
+TASK_26_5_CODE = """with open("26.txt") as file:
+    n, m = map(int, file.readline().split())
+    weights = sorted([int(line) for line in file], reverse=True)
+container_count = 0
+res = []
+while weights:
+    current_weight = 0
+    current_ans = []
+    for weight in weights[:]:
+        if current_weight + weight <= m:
+            current_weight += weight
+            weights.remove(weight)
+            current_ans.append(weight)
+    container_count += 1
+    res.append(current_ans)
+print(container_count, sum(res[-2]))"""
+
+# 27.1 — кластеризация звёзд: Файл A (2 кластера, R=2), Файл B (3 кластера, R=6). Ответ: 4 числа (|Px|*100, |Py|*100 для A и B).
+TASK_27_1_CODE = """# --- Файл A (1A.txt): 2 кластера ---
+f = open('1A.txt')
+n = f.readline()
+a = [[] for i in range(2)]
+for i in range(811):
+    star = list(map(float, f.readline().replace(',', '.').split()))
+    if (star[1] > 0 and star[1] < 40) and (star[0] > -20 and star[0] < 20):
+        a[0].append(star)
+    elif star[1] < -60 and star[0] > 0:
+        a[1].append(star)
+sum_x = sum_y = tx = ty = 0
+for i in a:
+    mn = 100000050000
+    for j in i:
+        x1, y1 = j
+        sm = 0
+        for k in i:
+            x2, y2 = k
+            sm += ((x2-x1)**2 + (y2-y1)**2)**0.5
+        if sm < mn:
+            mn = sm
+            tx, ty = x1, y1
+    sum_x += tx
+    sum_y += ty
+print(int(abs(sum_x / 2) * 100))
+print(int(abs(sum_y / 2) * 100))
+
+# --- Файл B (1B.txt): 3 кластера ---
+f = open('1B.txt')
+n = f.readline()
+a = [[] for i in range(3)]
+for i in range(11003):
+    star = list(map(float, f.readline().replace(',', '.').split()))
+    if star[1] < -60 and star[0] > -20:
+        a[0].append(star)
+    elif (star[1] < 0 and star[1] > -40) and star[0] > -40:
+        a[1].append(star)
+    elif star[1] < -40 and star[0] < -60:
+        a[2].append(star)
+sum_x = sum_y = tx = ty = 0
+for i in a:
+    mn = 100000050000
+    for j in i:
+        x1, y1 = j
+        sm = 0
+        for k in i:
+            x2, y2 = k
+            sm += ((x2-x1)**2 + (y2-y1)**2)**0.5
+        if sm < mn:
+            mn = sm
+            tx, ty = x1, y1
+    sum_x += tx
+    sum_y += ty
+print(int(abs(sum_x / 3) * 100))
+print(int(abs(sum_y / 3) * 100))"""
+
+# 27.2 — Файл A: 3 кластера, Mx и My — макс абсцисса и ордината центроидов. Файл B: 4 кластера, Dx и Dy — разность центроидов макс и мин по размеру.
+TASK_27_2_CODE = """# --- Файл A (2A.txt): 3 кластера, макс координаты центроидов ---
+f = open('2A.txt')
+n = f.readline()
+a = [[] for i in range(3)]
+for i in range(15032):
+    star = list(map(float, f.readline().replace(',', '.').split()))
+    if -40 < star[0] < 0 and 50 < star[1] < 100:
+        a[0].append(star)
+    elif 125 < star[0] < 165 and -50 < star[1] < 0:
+        a[1].append(star)
+    elif 124 < star[0] < 160 and -125 < star[1] < -75:
+        a[2].append(star)
+m_x = m_y = tx = ty = 0
+for i in a:
+    mn = 100000050000
+    for j in i:
+        x1, y1 = j
+        sm = 0
+        for k in i:
+            x2, y2 = k
+            sm += ((x2-x1)**2 + (y2-y1)**2)**0.5
+        if sm < mn:
+            mn = sm
+            tx, ty = x1, y1
+    m_x = max(m_x, tx)
+    m_y = max(m_y, ty)
+print(int(abs(m_x) * 100))
+print(int(abs(m_y) * 100))
+
+# --- Файл B (2B.txt): 4 кластера, разность центроидов макс и мин по размеру ---
+def centroid(cl):
+    tx = ty = 0
+    mn = 100000050000
+    for j in cl:
+        sm = 0
+        for k in cl:
+            sm += ((k[0]-j[0])**2 + (k[1]-j[1])**2)**0.5
+        if sm < mn:
+            mn = sm
+            tx, ty = j[0], j[1]
+    return [tx, ty]
+f = open('2B.txt')
+n = f.readline()
+a = [[] for i in range(4)]
+for i in range(2145):
+    star = list(map(float, f.readline().replace(',', '.').split()))
+    if -180 < star[0] < -140 and -150 < star[1] < -110:
+        a[0].append(star)
+    elif -180 < star[0] < -140 and -200 < star[1] < -150:
+        a[1].append(star)
+    elif 60 < star[0] < 90 and -55 < star[1] < -20:
+        a[2].append(star)
+    elif -10 < star[0] < 25 and -180 < star[1] < -140:
+        a[3].append(star)
+mn_cl = min(a, key=len)
+mx_cl = max(a, key=len)
+c_mn_cl = centroid(mn_cl)
+c_mx_cl = centroid(mx_cl)
+print(int(abs(c_mx_cl[0]-c_mn_cl[0]) * 10))
+print(int(abs(c_mx_cl[1]-c_mn_cl[1]) * 10))"""
 
 TASK_15_CODE = """def f(a):
     for x in range(1000):
@@ -693,9 +928,78 @@ async def fill_ege_tasks_22_23_24() -> None:
     )
 
 
+# 26.1: два скрина решения (таблицы + формула размера; столбец D цвет, E — кол-во коробок)
+TASK_26_1_SOLUTION_IMAGES = "ege_images/26_1_solution_1.png|ege_images/26_1_solution_2.png"
+
+
+async def fill_ege_tasks_26() -> None:
+    """Задание 26 — пять типов (26.1–26.5): у каждого код + скрины решения."""
+    await db.set_ege_task(
+        task_number=26,
+        title="Задача 26.1 — матрёшка: красные/зелёные коробки, разница ≥5",
+        example_solution=TASK_26_1_CODE,
+        explanation="",
+        source_url="https://code-enjoy.ru/courses/kurs_ege_po_informatike/",
+        solution_image=TASK_26_1_SOLUTION_IMAGES,
+        task_image="ege_images/26_1_task.png",
+    )
+    await db.set_ege_task_26_subtask(
+        part=2,
+        title="Задача 26.2 — конференция: макс мероприятий, раннее начало последнего",
+        task_image="ege_images/26_2_task.png",
+        solution_image="ege_images/26_2_solution.png",
+        example_solution=TASK_26_2_CODE,
+    )
+    await db.set_ege_task_26_subtask(
+        part=3,
+        title="Задача 26.3 — детали: шлифовка/окрашивание, конвейер",
+        task_image="ege_images/26_3_task.png",
+        solution_image="ege_images/26_3_solution.png",
+        example_solution=TASK_26_3_CODE,
+    )
+    await db.set_ege_task_26_subtask(
+        part=4,
+        title="Задача 26.4 — камера хранения: выручка и номер последней ячейки",
+        task_image="ege_images/26_4_task.png",
+        solution_image="ege_images/26_4_solution.png",
+        example_solution=TASK_26_4_CODE,
+    )
+    await db.set_ege_task_26_subtask(
+        part=5,
+        title="Задача 26.5 — контейнеры: число контейнеров и сумма в предпоследнем",
+        task_image="ege_images/26_5_task.png",
+        solution_image="ege_images/26_5_solution.png",
+        example_solution=TASK_26_5_CODE,
+    )
+
+
+# 27.1: условие — два скрина (текст задачи + график)
+TASK_27_1_IMAGES = "ege_images/27_1_task_1.png|ege_images/27_1_task_2.png"
+
+
+async def fill_ege_tasks_27() -> None:
+    """Задание 27 — два типа (27.1, 27.2). 27.1 — условие из двух скринов; у каждого два кода (Файл A и Б)."""
+    await db.set_ege_task(
+        task_number=27,
+        title="Задача 27.1 — кластеризация звёзд, 2 и 3 кластера (Файлы A и B)",
+        example_solution=TASK_27_1_CODE,
+        explanation="",
+        source_url="https://code-enjoy.ru/courses/kurs_ege_po_informatike/",
+        solution_image="",
+        task_image=TASK_27_1_IMAGES,
+    )
+    await db.set_ege_task_27_subtask(
+        part=2,
+        title="Задача 27.2 — центроиды: Mx, My для A; Dx, Dy для B",
+        task_image="ege_images/27_2_task.png",
+        solution_image="",
+        example_solution=TASK_27_2_CODE,
+    )
+
+
 async def ensure_ege_tasks_1_6() -> None:
-    """При старте бота: если у любого из заданий 1–24 нет условия или решения — заполняет заново."""
-    for num in range(1, 25):
+    """При старте бота: если у любого из заданий 1–27 нет условия или решения — заполняет заново."""
+    for num in range(1, 28):
         if num == 8:
             task = await db.get_ege_task(8)
             if not task or not (task.get("task_image") or "").strip():
@@ -706,6 +1010,8 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
                 return
             task2 = await db.get_ege_task(8, subtask=2)
             if not task2 or not (task2.get("task_image") or "").strip():
@@ -716,6 +1022,8 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
                 return
         elif num == 11:
             task = await db.get_ege_task(11)
@@ -727,6 +1035,8 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
                 return
             task2 = await db.get_ege_task(11, subtask=2)
             if not task2 or not (task2.get("task_image") or "").strip():
@@ -737,6 +1047,8 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
                 return
         elif num == 14:
             task = await db.get_ege_task(14)
@@ -748,6 +1060,8 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
                 return
             task2 = await db.get_ege_task(14, subtask=2)
             if not task2 or not (task2.get("task_image") or "").strip():
@@ -758,6 +1072,8 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
                 return
         elif num == 17:
             task = await db.get_ege_task(17)
@@ -769,6 +1085,8 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
                 return
             task2 = await db.get_ege_task(17, subtask=2)
             if not task2 or not (task2.get("task_image") or "").strip():
@@ -779,6 +1097,8 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
                 return
         elif num == 19:
             task = await db.get_ege_task(19)
@@ -790,6 +1110,8 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
                 return
             task2 = await db.get_ege_task(19, subtask=2)
             if not task2 or not (task2.get("task_image") or "").strip():
@@ -810,6 +1132,8 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
                 return
             task2 = await db.get_ege_task(20, subtask=2)
             if not task2 or not (task2.get("task_image") or "").strip():
@@ -820,6 +1144,8 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
                 return
         elif num == 21:
             task = await db.get_ege_task(21)
@@ -831,6 +1157,8 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
                 return
             task2 = await db.get_ege_task(21, subtask=2)
             if not task2 or not (task2.get("task_image") or "").strip():
@@ -841,6 +1169,8 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
                 return
         elif num == 22:
             task = await db.get_ege_task(22)
@@ -852,6 +1182,8 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
                 return
             task2 = await db.get_ege_task(22, subtask=2)
             if not task2 or not (task2.get("task_image") or "").strip():
@@ -862,6 +1194,8 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
                 return
         elif num == 24:
             task = await db.get_ege_task(24)
@@ -873,6 +1207,8 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
                 return
             task2 = await db.get_ege_task(24, subtask=2)
             if not task2 or not (task2.get("task_image") or "").strip():
@@ -883,6 +1219,59 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
+                return
+        elif num == 26:
+            task = await db.get_ege_task(26)
+            if not task or not (task.get("task_image") or "").strip():
+                await fill_ege_tasks_1_6()
+                await fill_ege_tasks_7_9()
+                await fill_ege_tasks_10_11_12()
+                await fill_ege_tasks_13_14()
+                await fill_ege_tasks_15_16_17()
+                await fill_ege_tasks_18_19_20_21()
+                await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
+                return
+            for sub in (2, 3, 4, 5):
+                task_sub = await db.get_ege_task(26, subtask=sub)
+                if not task_sub or not (task_sub.get("task_image") or "").strip():
+                    await fill_ege_tasks_1_6()
+                    await fill_ege_tasks_7_9()
+                    await fill_ege_tasks_10_11_12()
+                    await fill_ege_tasks_13_14()
+                    await fill_ege_tasks_15_16_17()
+                    await fill_ege_tasks_18_19_20_21()
+                    await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
+                return
+        elif num == 27:
+            task = await db.get_ege_task(27)
+            if not task or not (task.get("task_image") or "").strip():
+                await fill_ege_tasks_1_6()
+                await fill_ege_tasks_7_9()
+                await fill_ege_tasks_10_11_12()
+                await fill_ege_tasks_13_14()
+                await fill_ege_tasks_15_16_17()
+                await fill_ege_tasks_18_19_20_21()
+                await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
+                return
+            task2 = await db.get_ege_task(27, subtask=2)
+            if not task2 or not (task2.get("task_image") or "").strip():
+                await fill_ege_tasks_1_6()
+                await fill_ege_tasks_7_9()
+                await fill_ege_tasks_10_11_12()
+                await fill_ege_tasks_13_14()
+                await fill_ege_tasks_15_16_17()
+                await fill_ege_tasks_18_19_20_21()
+                await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
                 return
         else:
             task = await db.get_ege_task(num)
@@ -894,6 +1283,8 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
                 return
             ti = (task.get("task_image") or "").strip()
             si = (task.get("solution_image") or "").strip()
@@ -906,6 +1297,8 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_26()
+                await fill_ege_tasks_27()
                 return
     return
 
@@ -919,9 +1312,11 @@ async def main() -> None:
     await fill_ege_tasks_15_16_17()
     await fill_ege_tasks_18_19_20_21()
     await fill_ege_tasks_22_23_24()
-    for num in range(1, 25):
+    await fill_ege_tasks_26()
+    await fill_ege_tasks_27()
+    for num in range(1, 28):
         print(f"Задание {num}: настроено")
-    print("Готово. Задания 1–24 (8, 11, 14, 17, 19, 20, 21, 22, 24 — по два типа; 18 — несколько скринов решений).")
+    print("Готово. Задания 1–27 (8, 11, 14, 17, 19, 20, 21, 22, 24, 27 — по два типа; 26 — пять типов; 18 — несколько скринов решений).")
 
 
 if __name__ == "__main__":

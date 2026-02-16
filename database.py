@@ -441,6 +441,16 @@ async def get_ege_task(task_number: int, subtask: int | None = None) -> dict | N
             if out:
                 return out
             return None
+        if task_number == 26 and subtask is not None and 2 <= subtask <= 5:
+            out = _subtask_row(26, row, subtask, f"Задача 26.{subtask}")
+            if out:
+                return out
+            return None
+        if task_number == 27 and subtask == 2:
+            out = _subtask_row(27, row, 2, "Задача 27.2")
+            if out:
+                return out
+            return None
         row.pop("subtasks", None)
         return row
 
@@ -677,6 +687,52 @@ async def set_ege_task_24_subtask(part: int, title: str = "", task_image: str = 
             "example_solution": example_solution or "",
         }
         await db.execute("UPDATE ege_tasks SET subtasks = ? WHERE task_number = 24", (json.dumps(data, ensure_ascii=False),))
+        await db.commit()
+
+
+async def set_ege_task_26_subtask(part: int, title: str = "", task_image: str = "", solution_image: str = "", example_solution: str = "") -> None:
+    """Обновляет подзадание 26.2–26.5 (part=2,3,4,5) в JSON subtasks строки task_number=26."""
+    if part not in (2, 3, 4, 5):
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT subtasks FROM ege_tasks WHERE task_number = 26")
+        row = await cursor.fetchone()
+        import json
+        raw = (row[0] if row else "") or "{}"
+        try:
+            data = json.loads(raw)
+        except Exception:
+            data = {}
+        data[str(part)] = {
+            "title": title,
+            "task_image": task_image or "",
+            "solution_image": solution_image or "",
+            "example_solution": example_solution or "",
+        }
+        await db.execute("UPDATE ege_tasks SET subtasks = ? WHERE task_number = 26", (json.dumps(data, ensure_ascii=False),))
+        await db.commit()
+
+
+async def set_ege_task_27_subtask(part: int, title: str = "", task_image: str = "", solution_image: str = "", example_solution: str = "") -> None:
+    """Обновляет подзадание 27.2 (part=2) в JSON subtasks строки task_number=27."""
+    if part != 2:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT subtasks FROM ege_tasks WHERE task_number = 27")
+        row = await cursor.fetchone()
+        import json
+        raw = (row[0] if row else "") or "{}"
+        try:
+            data = json.loads(raw)
+        except Exception:
+            data = {}
+        data["2"] = {
+            "title": title,
+            "task_image": task_image or "",
+            "solution_image": solution_image or "",
+            "example_solution": example_solution or "",
+        }
+        await db.execute("UPDATE ege_tasks SET subtasks = ? WHERE task_number = 27", (json.dumps(data, ensure_ascii=False),))
         await db.commit()
 
 

@@ -583,6 +583,36 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     reply_markup=InlineKeyboardMarkup(keyboard),
                 )
                 return
+            if num == 26 and subtask is None:
+                keyboard = [
+                    [
+                        InlineKeyboardButton("26.1", callback_data="ege_task_26_1"),
+                        InlineKeyboardButton("26.2", callback_data="ege_task_26_2"),
+                        InlineKeyboardButton("26.3", callback_data="ege_task_26_3"),
+                    ],
+                    [
+                        InlineKeyboardButton("26.4", callback_data="ege_task_26_4"),
+                        InlineKeyboardButton("26.5", callback_data="ege_task_26_5"),
+                    ],
+                    [InlineKeyboardButton("📚 К списку заданий", callback_data="student_ege")],
+                ]
+                keyboard.extend(KEYBOARD_BACK_TO_MAIN)
+                await query.edit_message_text(
+                    "📚 Задание 26. Выберите тип:",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                )
+                return
+            if num == 27 and subtask is None:
+                keyboard = [
+                    [InlineKeyboardButton("Задача 27.1", callback_data="ege_task_27_1"), InlineKeyboardButton("Задача 27.2", callback_data="ege_task_27_2")],
+                    [InlineKeyboardButton("📚 К списку заданий", callback_data="student_ege")],
+                ]
+                keyboard.extend(KEYBOARD_BACK_TO_MAIN)
+                await query.edit_message_text(
+                    "📚 Задание 27. Выберите тип:",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                )
+                return
             task = await db.get_ege_task(num, subtask=subtask)
             has_any = task and (
                 (task.get("task_image") or "").strip()
@@ -602,11 +632,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 keyboard.extend(KEYBOARD_BACK_TO_MAIN)
                 await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard))
                 return
-            label = f"{num}.{subtask}" if ((num in (8, 11, 14, 17, 19, 20, 21, 22, 24)) and subtask) else str(num)
+            label = f"{num}.{subtask}" if ((num in (8, 11, 14, 17, 19, 20, 21, 22, 24, 26, 27)) and subtask) else str(num)
             title = (task.get("title") or "").strip() or f"Задание {label}"
             chat_id = query.message.chat_id
             task_image = (task.get("task_image") or "").strip()
-            solution_callback = f"ege_show_solution_{num}_{subtask}" if ((num in (8, 11, 14, 17, 19, 20, 21, 22, 24)) and subtask) else f"ege_show_solution_{num}"
+            solution_callback = f"ege_show_solution_{num}_{subtask}" if ((num in (8, 11, 14, 17, 19, 20, 21, 22, 24, 26, 27)) and subtask) else f"ege_show_solution_{num}"
             # Несколько фото задания (через "|"): отправляем подряд
             task_images = [p.strip() for p in task_image.split("|") if p.strip()]
             if task_images:
