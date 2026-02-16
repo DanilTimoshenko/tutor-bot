@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 # Ключи пошаговых диалогов — при старте одного сбрасываем остальные, чтобы не «подхватывать» сообщения
 FLOW_KEYS = ("add_lesson", "block_slot", "request_slot", "schedule_range_input", "homework_help")
 
+# Кнопка «Вернуться на главную» — чтобы после любого действия можно было не писать /start
+KEYBOARD_BACK_TO_MAIN = [[InlineKeyboardButton("🏠 Вернуться на главную", callback_data="main_menu")]]
+
 
 def _clear_other_flows(context: ContextTypes.DEFAULT_TYPE, keep: str) -> None:
     """Сбрасывает все пошаговые диалоги, кроме keep. Тогда после «нет»/«спасибо» бот не уйдёт в старый сценарий."""
@@ -37,6 +40,41 @@ def is_tutor(user_id: int, bot_data) -> bool:
 def is_admin(user_id: int, bot_data) -> bool:
     """Только администратор (ADMIN_USER_ID)."""
     return user_id == bot_data.get("admin_user_id")
+
+
+def _build_main_menu_content(user_id: int, first_name: str | None, bot_data: dict) -> tuple[str, list]:
+    """Текст и клавиатура главного меню (для /start и для кнопки «Вернуться на главную»)."""
+    title = bot_data.get("bot_title") or "Репетитор"
+    text = (
+        f"👋 Привет, {first_name or 'друг'}!\n\n"
+        f"Я бот записи на уроки — {title}.\n\n"
+        "Выберите действие:"
+    )
+    if is_tutor(user_id, bot_data):
+        if is_admin(user_id, bot_data):
+            text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👑 Режим администратора"
+        else:
+            text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👩‍🏫 Режим репетитора"
+        keyboard = [
+            [InlineKeyboardButton("✏️ Создать урок", callback_data="tutor_add_lesson")],
+            [InlineKeyboardButton("📅 Расписание", callback_data="tutor_schedule")],
+            [InlineKeyboardButton("📊 Сводка на завтра", callback_data="tutor_summary")],
+            [InlineKeyboardButton("👀 Как видят ученики", callback_data="tutor_preview_student")],
+            [InlineKeyboardButton("💬 Как очистить чат", callback_data="tutor_clear_chat_help")],
+            [InlineKeyboardButton("📥 Скачать БД", callback_data="admin_download_db")],
+        ]
+        if is_admin(user_id, bot_data):
+            keyboard.append([InlineKeyboardButton("➕ Добавить репетитора", callback_data="admin_add_tutor")])
+    else:
+        keyboard = [
+            [InlineKeyboardButton("📅 Записаться на урок", callback_data="student_lessons")],
+            [InlineKeyboardButton("📌 Мои записи и слоты", callback_data="student_my")],
+            [InlineKeyboardButton("🕐 Записаться на свободное время", callback_data="student_freetime")],
+            [InlineKeyboardButton("👤 Репетитор", callback_data="student_tutor")],
+        ]
+        if bot_data.get("openai_api_key"):
+            keyboard.append([InlineKeyboardButton("📝 Помощь с домашкой", callback_data="student_homework_help")])
+    return text, keyboard
 
 
 MSG_ONLY_TUTOR = "Вы зашли как ученик. Команды репетитора доступны только репетиторам. Используйте /lessons и /my."
@@ -63,51 +101,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     for key in FLOW_KEYS:
         context.user_data.pop(key, None)
     user = update.effective_user
-    title = context.bot_data.get("bot_title") or "Репетитор"
-    tutor_ids = _tutor_ids(context.bot_data)
     logger.info(
         "start: user_id=%s, tutor_ids=%s, is_tutor=%s",
         user.id,
-        tutor_ids,
+        _tutor_ids(context.bot_data),
         is_tutor(user.id, context.bot_data),
     )
-    text = (
-        f"👋 Привет, {user.first_name or 'друг'}!\n\n"
-        f"Я бот записи на уроки — {title}.\n\n"
-        "Выберите действие:"
-    )
-    if is_tutor(user.id, context.bot_data):
-        if is_admin(user.id, context.bot_data):
-            text += (
-                "\n\n━━━━━━━━━━━━━━━━━━━━\n"
-                "👑 Режим администратора"
-            )
-        else:
-            text += (
-                "\n\n━━━━━━━━━━━━━━━━━━━━\n"
-                "👩‍🏫 Режим репетитора"
-            )
-        keyboard = [
-            [InlineKeyboardButton("✏️ Создать урок", callback_data="tutor_add_lesson")],
-            [InlineKeyboardButton("📅 Расписание", callback_data="tutor_schedule")],
-            [InlineKeyboardButton("📊 Сводка на завтра", callback_data="tutor_summary")],
-            [InlineKeyboardButton("👀 Как видят ученики", callback_data="tutor_preview_student")],
-            [InlineKeyboardButton("💬 Как очистить чат", callback_data="tutor_clear_chat_help")],
-            [InlineKeyboardButton("📥 Скачать БД", callback_data="admin_download_db")],
-        ]
-        if is_admin(user.id, context.bot_data):
-            keyboard.append([InlineKeyboardButton("➕ Добавить репетитора", callback_data="admin_add_tutor")])
-        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-        return
-    # Кнопки для учеников
-    keyboard = [
-        [InlineKeyboardButton("📅 Записаться на урок", callback_data="student_lessons")],
-        [InlineKeyboardButton("📌 Мои записи и слоты", callback_data="student_my")],
-        [InlineKeyboardButton("🕐 Записаться на свободное время", callback_data="student_freetime")],
-        [InlineKeyboardButton("👤 Репетитор", callback_data="student_tutor")],
-    ]
-    if context.bot_data.get("openai_api_key"):
-        keyboard.append([InlineKeyboardButton("📝 Помощь с домашкой", callback_data="student_homework_help")])
+    text, keyboard = _build_main_menu_content(user.id, user.first_name, context.bot_data)
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -285,6 +285,7 @@ async def _build_my_bookings_message(user_id: int, username: str):
             keyboard.append([
                 InlineKeyboardButton(f"🔓 Отменить слот · {day} {s['lesson_time']}", callback_data=f"student_unblock_{s['id']}"),
             ])
+    keyboard.extend(KEYBOARD_BACK_TO_MAIN)
     return text.strip(), InlineKeyboardMarkup(keyboard)
 
 
@@ -313,11 +314,20 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         logger.warning("query.answer failed: %s", e)
 
     try:
+        if data == "main_menu":
+            for key in FLOW_KEYS:
+                context.user_data.pop(key, None)
+            user = query.from_user
+            text, keyboard = _build_main_menu_content(user.id, user.first_name, context.bot_data)
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+            return
+
         if data == "student_lessons":
             lessons = await db.get_upcoming_lessons()
             if not lessons:
                 await query.edit_message_text(
                     "📭 Пока нет доступных уроков.\n\nСледи за обновлениями — новые слоты появятся здесь.",
+                    reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
                 )
                 return
             text = "📋 Доступные уроки\n\nВыбери урок и нажми кнопку записи:\n\n" + "\n\n".join(format_lesson(l) for l in lessons)
@@ -332,10 +342,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                             callback_data=f"book_{l['id']}",
                         )
                     ])
-            if keyboard:
-                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-            else:
-                await query.edit_message_text(text)
+            keyboard.extend(KEYBOARD_BACK_TO_MAIN)
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
         elif data == "student_my":
             user_id = query.from_user.id
@@ -345,6 +353,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 await query.edit_message_text(
                     "📌 У вас пока нет записей.\n\n"
                     "Нажми «Записаться на урок», чтобы выбрать урок и записаться.",
+                    reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
                 )
                 return
             await query.edit_message_text(text, reply_markup=reply_markup)
@@ -354,7 +363,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             msg = f"👤 Репетитор\n\nЗанятия ведёт: {title}."
             if context.bot_data.get("materials_channel_link"):
                 msg += f"\n\n📚 Материалы: /materials"
-            await query.edit_message_text(msg)
+            await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN))
 
         elif data == "student_freetime":
             _clear_other_flows(context, "request_slot")
@@ -370,7 +379,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await query.edit_message_text(
                 "📝 Помощь с домашкой\n\n"
                 "Напиши вопрос или задание — постараюсь объяснить и подсказать ход решения.\n\n"
-                "Для выхода нажми /start.",
+                "Для выхода нажми кнопку ниже или /start.",
+                reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
             )
 
         elif data == "admin_add_tutor":
@@ -385,6 +395,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 "  2071587097,123456789\n"
                 "  (твой ID уже считается репетитором как админ). После изменения сделай Redeploy.\n\n"
                 "Когда будет готова команда добавления из бота — подскажешь, добавлю.",
+                reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
             )
 
         elif data == "admin_download_db":
@@ -396,7 +407,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 if not path.exists():
                     await query.edit_message_text(
                         "📥 Скачать БД\n\nФайл базы данных ещё не создан (нет уроков/записей). "
-                        "После первого создания урока файл появится."
+                        "После первого создания урока файл появится.",
+                        reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
                     )
                     return
                 with open(path, "rb") as f:
@@ -408,12 +420,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     caption="Резервная копия базы (уроки, записи, слоты). Сохрани на ноутбук при переносе сервера.",
                 )
                 await query.edit_message_text(
-                    "✅ Файл базы отправлен в чат. Сохрани его на ноутбук — при переносе сервера можно будет использовать эту копию."
+                    "✅ Файл базы отправлен в чат. Сохрани его на ноутбук — при переносе сервера можно будет использовать эту копию.",
+                    reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
                 )
             except Exception as e:
                 logger.exception("admin_download_db: %s", e)
                 await query.edit_message_text(
-                    f"❌ Не удалось отправить базу: {e}. Проверь логи на сервере."
+                    f"❌ Не удалось отправить базу: {e}. Проверь логи на сервере.",
+                    reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
                 )
 
         elif data == "tutor_add_lesson":
@@ -477,7 +491,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 return
             tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
             lessons = await db.get_lessons_on_date(tomorrow)
-            await query.edit_message_text(_format_summary(tomorrow, lessons))
+            await query.edit_message_text(
+                _format_summary(tomorrow, lessons),
+                reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
+            )
 
         elif data == "tutor_clear_schedule":
             if not is_tutor(user_id, context.bot_data):
@@ -523,6 +540,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 "Бот не может удалить сообщения за вас. Сделайте так:\n\n"
                 "• iPhone/Android: откройте чат с ботом → нажмите на название бота вверху → «Очистить историю» или «Удалить чат».\n\n"
                 "• Telegram Desktop: правый клик по чату → «Очистить историю».",
+                reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
             )
 
         elif data == "tutor_clear_schedule_cancel":
@@ -561,7 +579,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             if ok:
                 await _refresh_schedule_message(query, context)
             else:
-                await query.edit_message_text("Не удалось снять слот.")
+                await query.edit_message_text("Не удалось снять слот.", reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN))
 
         elif data == "tutor_preview_student":
             if not is_tutor(user_id, context.bot_data):
@@ -598,7 +616,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 username=query.from_user.username,
                 first_name=query.from_user.first_name,
             )
-            await query.edit_message_text(msg)
+            await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN))
             if ok:
                 lesson = await db.get_lesson(lesson_id)
                 if lesson:
@@ -619,12 +637,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             slot_id = int(data.split("_")[2])
             slot = await db.get_blocked_slot_by_id(slot_id)
             if not slot:
-                await query.edit_message_text("Слот уже снят.")
+                await query.edit_message_text("Слот уже снят.", reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN))
                 return
             student_username = (slot.get("student_username") or "").strip().lower()
             my_username = (query.from_user.username or "").strip().lower()
             if student_username and student_username != my_username:
-                await query.edit_message_text("Этот слот закреплён за другим учеником.")
+                await query.edit_message_text("Этот слот закреплён за другим учеником.", reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN))
                 return
             await db.delete_blocked_slot(slot_id)
             username = (query.from_user.username or "").strip()
@@ -632,6 +650,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             if text is None:
                 await query.edit_message_text(
                     "✅ Слот отменён.\n\n📌 У вас больше нет записей. Нажми «Записаться на урок» или /lessons.",
+                    reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
                 )
                 return
             await query.edit_message_text("✅ Слот отменён.\n\n" + text, reply_markup=reply_markup)
@@ -639,7 +658,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         elif data.startswith("cancel_"):
             lesson_id = int(data.split("_")[1])
             ok, msg = await db.cancel_booking(lesson_id, user_id)
-            await query.edit_message_text(msg)
+            await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN))
 
         elif data.startswith("tutor_bookings_"):
             lesson_id = int(data.split("_")[2])
@@ -652,7 +671,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             else:
                 lines = [f"   • {b.get('first_name') or b.get('username') or 'ID' + str(b['user_id'])} (id {b['user_id']})" for b in bookings]
                 text = "👥 Кто записан\n\n" + "\n".join(lines)
-            await query.edit_message_text(text)
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN))
 
         elif data.startswith("tutor_del_"):
             lesson_id = int(data.split("_")[2])
@@ -678,19 +697,26 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                             jq.scheduler.remove_job(name)
                         except Exception:
                             pass
-            await query.edit_message_text("✅ Урок удалён." if ok else "❌ Не удалось удалить.")
+            await query.edit_message_text(
+                "✅ Урок удалён." if ok else "❌ Не удалось удалить.",
+                reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
+            )
 
         else:
             logger.warning("Unknown callback_data: %r", data)
             try:
-                await query.edit_message_text("Неизвестная кнопка. Нажмите /start")
+                user = query.from_user
+                text, keyboard = _build_main_menu_content(user.id, user.first_name, context.bot_data)
+                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
             except Exception:
                 pass
 
     except Exception as e:
         logger.exception("Callback error: %s", e)
         try:
-            await query.edit_message_text("Произошла ошибка. Попробуйте /start")
+            user = query.from_user
+            text, keyboard = _build_main_menu_content(user.id, user.first_name, context.bot_data)
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
         except Exception:
             pass
 
@@ -1153,6 +1179,7 @@ async def _build_schedule_message(context: ContextTypes.DEFAULT_TYPE):
     keyboard.append([
         InlineKeyboardButton("🗑 Очистить всё расписание", callback_data="tutor_clear_schedule"),
     ])
+    keyboard.extend(KEYBOARD_BACK_TO_MAIN)
     return text, InlineKeyboardMarkup(keyboard)
 
 

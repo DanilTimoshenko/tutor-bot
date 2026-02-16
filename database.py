@@ -12,7 +12,8 @@ DB_PATH = Path(_db_path) if _db_path else Path(__file__).parent / "tutor_bot.db"
 
 
 async def init_db():
-    """Создаёт таблицы, если их нет."""
+    """Создаёт таблицы, если их нет. Директорию для файла БД создаёт при необходимости (для Railway Volume)."""
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
             CREATE TABLE IF NOT EXISTS lessons (
