@@ -719,8 +719,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     logger.warning("ege_show_solution markdown failed, fallback to HTML: %s", e)
                     code_html = _format_homework_reply_for_telegram(f"Решение (код):\n\n{example}")[0]
                     await context.bot.send_message(chat_id=chat_id, text=code_html, parse_mode="HTML")
-                # Скрин после кода только если он не дублирует код (9 — Excel, 13 — пояснение). Для 2, 8 и др. — только код, без скрина.
-                if solution_images and num in (9, 13):
+                # Скрин после кода: 9 — Excel, 13 — пояснение, 26 — решение и кодом и скринами (таблицы/разбор).
+                if solution_images and num in (9, 13, 26):
                     try:
                         root = Path(__file__).parent
                         for idx, one in enumerate(solution_images):
