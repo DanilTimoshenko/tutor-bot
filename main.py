@@ -45,6 +45,11 @@ def main() -> None:
     app.bot_data["tutor_user_id"] = config.TUTOR_USER_ID
     app.bot_data["bot_title"] = getattr(config, "BOT_TITLE", None)
     app.bot_data["materials_channel_link"] = getattr(config, "MATERIALS_CHANNEL_LINK", None)
+    _yandex_key = (getattr(config, "YANDEX_API_KEY", None) or "").strip()
+    _yandex_folder = (getattr(config, "YANDEX_FOLDER_ID", None) or "").strip()
+    app.bot_data["yandex_api_key"] = _yandex_key
+    app.bot_data["yandex_folder_id"] = _yandex_folder
+    app.bot_data["openai_api_key"] = _yandex_key and _yandex_folder
 
     app.add_handler(CommandHandler("start", h.start))
     app.add_handler(CommandHandler("help", h.help_cmd))
@@ -58,6 +63,9 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(h.button_callback))
 
     async def text_handler(update, context):
+        if context.user_data.get("homework_help"):
+            if await h.homework_receive(update, context):
+                return
         if context.user_data.get("request_slot"):
             if await h.request_slot_receive(update, context):
                 return

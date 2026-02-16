@@ -9,11 +9,12 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 import database as db
+import homework_llm
 
 logger = logging.getLogger(__name__)
 
 # Ключи пошаговых диалогов — при старте одного сбрасываем остальные, чтобы не «подхватывать» сообщения
-FLOW_KEYS = ("add_lesson", "block_slot", "request_slot", "schedule_range_input")
+FLOW_KEYS = ("add_lesson", "block_slot", "request_slot", "schedule_range_input", "homework_help")
 
 
 def _clear_other_flows(context: ContextTypes.DEFAULT_TYPE, keep: str) -> None:
@@ -77,6 +78,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         [InlineKeyboardButton("🕐 Записаться на свободное время", callback_data="student_freetime")],
         [InlineKeyboardButton("👤 Репетитор", callback_data="student_tutor")],
     ]
+    if context.bot_data.get("openai_api_key"):
+        keyboard.append([InlineKeyboardButton("📝 Помощь с домашкой", callback_data="student_homework_help")])
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -91,6 +94,30 @@ async def materials_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
     else:
         await update.message.reply_text("Ссылка на материалы пока не добавлена.")
+
+
+async def homework_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Обработка вопроса для «Помощь с домашкой». Возвращает True если обработано."""
+    if not context.user_data.get("homework_help"):
+        return False
+    text = (update.message.text or "").strip()
+    if len(text) < 2:
+        await update.message.reply_text("Напиши вопрос или задание текстом (хотя бы пару слов).")
+        return True
+    api_key = context.bot_data.get("yandex_api_key") or ""
+    folder_id = context.bot_data.get("yandex_folder_id") or ""
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+    reply = await homework_llm.ask_homework(text, api_key, folder_id)
+    context.user_data.pop("homework_help", None)
+    if reply:
+        if len(reply) > 4000:
+            reply = reply[:3990] + "\n\n… (ответ обрезан)"
+        await update.message.reply_text(reply)
+    else:
+        await update.message.reply_text(
+            "Не удалось получить ответ. Проверь, что у репетитора заданы YANDEX_API_KEY и YANDEX_FOLDER_ID, или попробуй позже.",
+        )
+    return True
 
 
 async def request_slot_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -292,6 +319,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 "Напиши желаемую дату урока в формате 20.02.2025 или 2025-02-20:",
             )
 
+        elif data == "student_homework_help":
+            _clear_other_flows(context, "homework_help")
+            context.user_data["homework_help"] = True
+            await query.edit_message_text(
+                "📝 Помощь с домашкой\n\n"
+                "Напиши вопрос или задание — постараюсь объяснить и подсказать ход решения.\n\n"
+                "Для выхода нажми /start.",
+            )
+
         elif data == "tutor_add_lesson":
             if not is_tutor(user_id, tutor_id):
                 await query.edit_message_text(MSG_ONLY_TUTOR)
@@ -455,6 +491,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 [InlineKeyboardButton("🕐 Записаться на свободное время", callback_data="student_freetime")],
                 [InlineKeyboardButton("👤 Репетитор", callback_data="student_tutor")],
             ]
+            if context.bot_data.get("openai_api_key"):
+                keyboard.append([InlineKeyboardButton("📝 Помощь с домашкой", callback_data="student_homework_help")])
             await query.message.reply_text(
                 "👀 Так видят ученики:\n━━━━━━━━━━━━━━━━━━━━",
             )

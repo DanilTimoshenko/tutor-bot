@@ -1,11 +1,14 @@
 """
 База данных: уроки и записи учеников.
+Путь к файлу: из переменной окружения DATABASE_PATH (для Railway Volume) или по умолчанию tutor_bot.db в папке проекта.
 """
+import os
 import aiosqlite
 from datetime import datetime
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "tutor_bot.db"
+_db_path = os.environ.get("DATABASE_PATH", "").strip()
+DB_PATH = Path(_db_path) if _db_path else Path(__file__).parent / "tutor_bot.db"
 
 
 async def init_db():

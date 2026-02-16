@@ -1,0 +1,17 @@
+# Для Oracle Cloud: пользователь ubuntu, проект в /home/ubuntu/tutor-bot
+# Установка: sudo cp tutor-bot-ubuntu.service /etc/systemd/system/tutor-bot.service
+
+[Unit]
+Description=Telegram Tutor Bot
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/tutor-bot
+ExecStart=/home/ubuntu/tutor-bot/.venv/bin/python main.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

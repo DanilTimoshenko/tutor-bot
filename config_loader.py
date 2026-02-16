@@ -29,3 +29,5 @@ except ModuleNotFoundError:
         MATERIALS_CHANNEL_LINK = os.environ.get("MATERIALS_CHANNEL_LINK") or None
         CHANNEL_ID = os.environ.get("CHANNEL_ID") or None
         SUMMARY_DAILY_HOUR = int(_h) if _h and str(_h).strip().isdigit() else None
+        YANDEX_API_KEY = os.environ.get("YANDEX_API_KEY") or None
+        YANDEX_FOLDER_ID = os.environ.get("YANDEX_FOLDER_ID") or None

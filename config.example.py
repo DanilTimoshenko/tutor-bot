@@ -19,3 +19,8 @@ CHANNEL_ID = None
 
 # Час (0-23) ежедневной сводки репетитору. None — только по /summary
 SUMMARY_DAILY_HOUR = 9
+
+# Yandex GPT для «Помощь с домашкой». Без ключа и каталога кнопка не показывается.
+# Каталог и API-ключ: Yandex Cloud → AI Foundation Models → подключаешь YandexGPT → смотри folder_id и создаёшь API-ключ.
+YANDEX_API_KEY = None
+YANDEX_FOLDER_ID = None
