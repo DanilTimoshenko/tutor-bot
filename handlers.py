@@ -21,6 +21,40 @@ FLOW_KEYS = ("add_lesson", "block_slot", "request_slot", "schedule_range_input",
 KEYBOARD_BACK_TO_MAIN = [[InlineKeyboardButton("🏠 Вернуться на главную", callback_data="main_menu")]]
 
 
+def _latex_to_plain(text: str) -> str:
+    """Заменяет частые LaTeX-обозначения на текст/Unicode, чтобы формулы читались в Telegram."""
+    t = text
+    # Дроби \frac{a}{b} → (a)/(b); простой случай без вложенных {}
+    t = re.sub(r"\\frac\{([^{}]*)\}\{([^{}]*)\}", r"(\1)/(\2)", t)
+    # Инлайн и дисплей: убираем обёртки, оставляем содержимое
+    t = re.sub(r"\\\((.+?)\\\)", r"\1", t, flags=re.DOTALL)
+    t = re.sub(r"\\\[(.+?)\\\]", r"\n\1\n", t, flags=re.DOTALL)
+    # Степени в фигурных скобках: ^{x} → ^x (один символ) или оставляем
+    t = re.sub(r"\^\{([^{}]*)\}", r"^\1", t)
+    t = re.sub(r"_\{([^{}]*)\}", r"_\1", t)
+    # Частые команды → символы
+    t = t.replace("\\cdots", "…")
+    t = t.replace("\\cdot", "·")
+    t = t.replace("\\times", "×")
+    t = t.replace("\\equiv", "≡")
+    t = t.replace("\\rightarrow", "→")
+    t = t.replace("\\leftarrow", "←")
+    t = t.replace("\\vee", "∨")
+    t = t.replace("\\wedge", "∧")
+    t = t.replace("\\neg", "¬")
+    t = t.replace("\\sqrt", "√")
+    t = t.replace("\\sum", "∑")
+    t = t.replace("\\int", "∫")
+    t = t.replace("\\infty", "∞")
+    t = t.replace("\\leq", "≤")
+    t = t.replace("\\geq", "≥")
+    t = t.replace("\\neq", "≠")
+    t = t.replace("\\pm", "±")
+    # Двойные бэкслеши от модели
+    t = t.replace("\\\\", "\n")
+    return t
+
+
 def _format_homework_reply_for_telegram(text: str) -> tuple[str, str | None]:
     """
     Конвертирует ответ с блоками кода (```python ... ``` и т.п.) в HTML для Telegram:
@@ -181,6 +215,7 @@ async def homework_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
         return True
     if reply:
+        reply = _latex_to_plain(reply)
         if len(reply) > 4000:
             reply = reply[:3990] + "\n\n… (ответ обрезан)"
         body, parse_mode = _format_homework_reply_for_telegram(reply)
