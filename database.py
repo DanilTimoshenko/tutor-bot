@@ -69,10 +69,18 @@ async def init_db():
                     day_of_week INTEGER NOT NULL,
                     lesson_time TEXT NOT NULL,
                     student_username TEXT DEFAULT '',
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    lesson_link TEXT DEFAULT '',
+                    student_user_id INTEGER
                 )
             """)
-            await db.execute("INSERT INTO blocked_slots_new SELECT id, student_name, day_of_week, lesson_time, COALESCE(student_username,''), created_at FROM blocked_slots")
+            # Копируем все колонки; lesson_link и student_user_id могли быть добавлены ALTER'ами выше
+            await db.execute("""
+                INSERT INTO blocked_slots_new
+                SELECT id, student_name, day_of_week, lesson_time, COALESCE(student_username,''), created_at,
+                       COALESCE(lesson_link,''), student_user_id
+                FROM blocked_slots
+            """)
             await db.execute("DROP TABLE blocked_slots")
             await db.execute("ALTER TABLE blocked_slots_new RENAME TO blocked_slots")
         else:
@@ -83,7 +91,9 @@ async def init_db():
                     day_of_week INTEGER NOT NULL,
                     lesson_time TEXT NOT NULL,
                     student_username TEXT DEFAULT '',
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    lesson_link TEXT DEFAULT '',
+                    student_user_id INTEGER
                 )
             """)
         # Раздел ЕГЭ: 27 заданий (пример решения + краткое объяснение), источник — code-enjoy.ru

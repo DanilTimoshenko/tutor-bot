@@ -236,7 +236,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
     if user.username:
-        await db.update_blocked_slots_user_id(user.username, user.id)
+        try:
+            await db.update_blocked_slots_user_id(user.username, user.id)
+        except Exception as e:
+            logger.warning("update_blocked_slots_user_id failed: %s", e, exc_info=True)
 
 
 async def materials_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
