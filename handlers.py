@@ -176,10 +176,12 @@ def _build_main_menu_content(
             [InlineKeyboardButton("✏️ Создать урок", callback_data="tutor_add_lesson")],
             [InlineKeyboardButton("📅 Расписание", callback_data="tutor_schedule")],
             [InlineKeyboardButton("📊 Сводка на завтра", callback_data="tutor_summary")],
-            [InlineKeyboardButton("👀 Как видят ученики", callback_data="tutor_preview_student")],
             [InlineKeyboardButton("💬 Как очистить чат", callback_data="tutor_clear_chat_help")],
             [InlineKeyboardButton("📥 Скачать БД", callback_data="admin_download_db")],
         ]
+        # Кнопка «Как видят ученики» — только у админа
+        if is_admin(user_id, bot_data):
+            keyboard.insert(4, [InlineKeyboardButton("👀 Как видят ученики", callback_data="tutor_preview_student")])
         if is_admin(user_id, bot_data) and (mode == "admin" or mode is None):
             keyboard.append([InlineKeyboardButton("➕ Добавить репетитора", callback_data="admin_add_tutor")])
     else:
@@ -1061,8 +1063,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 await query.edit_message_text("Не удалось снять слот.", reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN))
 
         elif data == "tutor_preview_student":
-            if not is_tutor(user_id, context.bot_data):
-                await query.edit_message_text(MSG_ONLY_TUTOR)
+            if not is_admin(user_id, context.bot_data):
+                await query.edit_message_text("Эта кнопка доступна только администратору.")
                 return
             title = context.bot_data.get("bot_title") or "Репетитор"
             preview_text = (
