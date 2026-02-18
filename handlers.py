@@ -59,21 +59,27 @@ def _latex_to_plain(text: str) -> str:
 
 def _format_homework_reply_for_telegram(text: str) -> tuple[str, str | None]:
     """
-    Конвертирует ответ с блоками кода (```python ... ``` и т.п.) в HTML для Telegram:
-    моноширинный блок + подпись языка (как «Python») сверху. Подсветку синтаксиса Telegram не поддерживает.
+    Конвертирует ответ с блоками кода (```python ... ``` и однострочные ```код```) в HTML для Telegram:
+    моноширинный блок + подпись языка. Однострочные вставки от GPT тоже распознаются.
     """
     def escape_html(s: str) -> str:
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     blocks: list[str] = []
     zw = "\u200b"
+    KNOWN_LANGS = frozenset({"python", "py", "javascript", "js", "formula"})
 
-    # Группа 1 — язык (python, javascript, ...), группа 2 — код
-    pattern = re.compile(r"```(\w*)\s*\n(.*?)```", re.DOTALL)
+    # Многострочный: ```язык\nкод``` или ```\nкод```
+    pattern_multiline = re.compile(r"```(\w*)\s*\n(.*?)```", re.DOTALL)
+    # Однострочный (как у GPT): ```код``` без перевода строки внутри
+    pattern_inline = re.compile(r"```([^`\n]+)```")
 
-    def replace_block(m: re.Match) -> str:
+    def replace_multiline(m: re.Match) -> str:
         lang = (m.group(1) or "").strip().lower()
-        code = m.group(2)
+        code = (m.group(2) or "").strip()
+        if lang and lang not in KNOWN_LANGS:
+            code = (lang + " " + code).strip()
+            lang = ""
         idx = len(blocks)
         label = ""
         if lang:
@@ -81,9 +87,18 @@ def _format_homework_reply_for_telegram(text: str) -> tuple[str, str | None]:
             label = f"<b>{escape_html(name)}</b>\n"
         blocks.append(label + "<pre><code>" + escape_html(code) + "</code></pre>")
         return f"{zw}{idx}{zw}"
-    if not pattern.search(text):
+
+    def replace_inline(m: re.Match) -> str:
+        code = (m.group(1) or "").strip()
+        idx = len(blocks)
+        blocks.append("<pre><code>" + escape_html(code) + "</code></pre>")
+        return f"{zw}{idx}{zw}"
+
+    # Сначала многострочные, потом однострочные (чтобы не зацепить конец многострочного блока)
+    temp = pattern_multiline.sub(replace_multiline, text)
+    temp = pattern_inline.sub(replace_inline, temp)
+    if not blocks:
         return text, None
-    temp = pattern.sub(replace_block, text)
     temp = escape_html(temp)
     for i, block in enumerate(blocks):
         temp = temp.replace(f"{zw}{i}{zw}", block, 1)
@@ -111,16 +126,49 @@ def is_admin(user_id: int, bot_data) -> bool:
     return user_id == bot_data.get("admin_user_id")
 
 
-def _build_main_menu_content(user_id: int, first_name: str | None, bot_data: dict) -> tuple[str, list]:
-    """Текст и клавиатура главного меню (для /start и для кнопки «Вернуться на главную»)."""
+def _build_main_menu_content(
+    user_id: int, first_name: str | None, bot_data: dict, user_data: dict | None = None
+) -> tuple[str, list]:
+    """Текст и клавиатура главного меню (для /start и для кнопки «Вернуться на главную»).
+    Для админа при user_data без admin_mode показывается выбор из трёх режимов."""
     title = bot_data.get("bot_title") or "Репетитор"
     text = (
         f"👋 Привет, {first_name or 'друг'}!\n\n"
         f"Я бот записи на уроки — {title}.\n\n"
         "Выберите действие:"
     )
+
+    # Только админ: при первом заходе — выбор режима (админ / репетитор / ученик)
+    if user_data is not None and is_admin(user_id, bot_data) and user_data.get("admin_mode") is None:
+        text = (
+            f"👋 Привет, {first_name or 'друг'}!\n\n"
+            f"Я бот записи на уроки — {title}.\n\n"
+            "Выберите режим:"
+        )
+        keyboard = [
+            [InlineKeyboardButton("👑 Режим админа", callback_data="choose_mode_admin")],
+            [InlineKeyboardButton("👩‍🏫 Режим репетитора", callback_data="choose_mode_tutor")],
+            [InlineKeyboardButton("👤 Режим ученика", callback_data="choose_mode_student")],
+        ]
+        return text, keyboard
+
+    # Админ с выбранным режимом «ученик» — показываем меню ученика
+    if user_data and is_admin(user_id, bot_data) and user_data.get("admin_mode") == "student":
+        keyboard = [
+            [InlineKeyboardButton("📅 Записаться на урок", callback_data="student_lessons")],
+            [InlineKeyboardButton("📌 Мои записи и слоты", callback_data="student_my")],
+            [InlineKeyboardButton("🕐 Записаться на свободное время", callback_data="student_freetime")],
+            [InlineKeyboardButton("👤 Репетитор", callback_data="student_tutor")],
+        ]
+        if bot_data.get("openai_api_key"):
+            keyboard.append([InlineKeyboardButton("📝 Помощь с домашкой", callback_data="student_homework_help")])
+        keyboard.append([InlineKeyboardButton("📚 Раздел ЕГЭ", callback_data="student_ege")])
+        return text, keyboard
+
+    # Режим репетитора (в т.ч. для админа в режиме «репетитор») — без кнопки «Добавить репетитора»
     if is_tutor(user_id, bot_data):
-        if is_admin(user_id, bot_data):
+        mode = user_data.get("admin_mode") if (user_data and is_admin(user_id, bot_data)) else None
+        if mode == "admin" or (is_admin(user_id, bot_data) and mode != "tutor"):
             text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👑 Режим администратора"
         else:
             text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👩‍🏫 Режим репетитора"
@@ -132,7 +180,7 @@ def _build_main_menu_content(user_id: int, first_name: str | None, bot_data: dic
             [InlineKeyboardButton("💬 Как очистить чат", callback_data="tutor_clear_chat_help")],
             [InlineKeyboardButton("📥 Скачать БД", callback_data="admin_download_db")],
         ]
-        if is_admin(user_id, bot_data):
+        if is_admin(user_id, bot_data) and (mode == "admin" or mode is None):
             keyboard.append([InlineKeyboardButton("➕ Добавить репетитора", callback_data="admin_add_tutor")])
     else:
         keyboard = [
@@ -177,7 +225,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         _tutor_ids(context.bot_data),
         is_tutor(user.id, context.bot_data),
     )
-    text, keyboard = _build_main_menu_content(user.id, user.first_name, context.bot_data)
+    text, keyboard = _build_main_menu_content(
+        user.id, user.first_name, context.bot_data, context.user_data
+    )
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -276,6 +326,12 @@ async def request_slot_receive(update: Update, context: ContextTypes.DEFAULT_TYP
             await context.bot.send_message(chat_id=tutor_id, text=req)
         except Exception:
             pass
+        admin_id = context.bot_data.get("admin_user_id")
+        if admin_id and admin_id != tutor_id:
+            try:
+                await context.bot.send_message(chat_id=admin_id, text=req)
+            except Exception:
+                pass
         await update.message.reply_text(
             "✅ Запрос отправлен репетитору.\n\n"
             "Когда урок будет создан, он появится в разделе «Записаться на урок» — зайди туда и запишись.",
@@ -390,7 +446,40 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             for key in FLOW_KEYS:
                 context.user_data.pop(key, None)
             user = query.from_user
-            text, keyboard = _build_main_menu_content(user.id, user.first_name, context.bot_data)
+            text, keyboard = _build_main_menu_content(
+                user.id, user.first_name, context.bot_data, context.user_data
+            )
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+            return
+
+        if data == "choose_mode_admin":
+            if not is_admin(user_id, context.bot_data):
+                await query.answer("Доступно только администратору.")
+                return
+            context.user_data["admin_mode"] = "admin"
+            text, keyboard = _build_main_menu_content(
+                user_id, query.from_user.first_name, context.bot_data, context.user_data
+            )
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+            return
+        if data == "choose_mode_tutor":
+            if not is_admin(user_id, context.bot_data):
+                await query.answer("Доступно только администратору.")
+                return
+            context.user_data["admin_mode"] = "tutor"
+            text, keyboard = _build_main_menu_content(
+                user_id, query.from_user.first_name, context.bot_data, context.user_data
+            )
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+            return
+        if data == "choose_mode_student":
+            if not is_admin(user_id, context.bot_data):
+                await query.answer("Доступно только администратору.")
+                return
+            context.user_data["admin_mode"] = "student"
+            text, keyboard = _build_main_menu_content(
+                user_id, query.from_user.first_name, context.bot_data, context.user_data
+            )
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
             return
 
@@ -1097,7 +1186,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             logger.warning("Unknown callback_data: %r", data)
             try:
                 user = query.from_user
-                text, keyboard = _build_main_menu_content(user.id, user.first_name, context.bot_data)
+                text, keyboard = _build_main_menu_content(
+                    user.id, user.first_name, context.bot_data, context.user_data
+                )
                 await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
             except Exception:
                 pass
@@ -1106,7 +1197,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         logger.exception("Callback error: %s", e)
         try:
             user = query.from_user
-            text, keyboard = _build_main_menu_content(user.id, user.first_name, context.bot_data)
+            text, keyboard = _build_main_menu_content(
+                user.id, user.first_name, context.bot_data, context.user_data
+            )
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
         except Exception:
             pass
