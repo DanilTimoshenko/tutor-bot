@@ -1923,8 +1923,10 @@ async def block_slot_receive(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if text.lower() in ("нет", "no", "н", "n"):
             n = data.get("slots_added", 1)
             context.user_data.pop("block_slot", None)
+            keyboard = [[InlineKeyboardButton("📅 Вернуться в расписание", callback_data="tutor_schedule")]]
             await update.message.reply_text(
                 f"✅ Готово. Закреплено слотов за {name}: {n}.",
+                reply_markup=InlineKeyboardMarkup(keyboard),
             )
             return True
         await update.message.reply_text("Напиши да или нет.")
