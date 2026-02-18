@@ -374,31 +374,49 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+# Макс. уроков в списке /lessons (чтобы не превысить лимит Telegram: 4096 символов, ~100 кнопок)
+_LESSONS_LIST_MAX = 40
+
 async def lessons_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    lessons = await db.get_upcoming_lessons()
-    if not lessons:
-        await update.message.reply_text(
-            "📭 Пока нет доступных уроков.\n\n"
-            "Следи за обновлениями — новые слоты появятся здесь.",
-        )
-        return
-    text = "📋 Доступные уроки\n\nВыбери урок и нажми кнопку записи:\n\n" + "\n\n".join(format_lesson(l) for l in lessons)
-    keyboard = []
-    for l in lessons:
-        booked = l.get("booked_count", 0)
-        max_s = l.get("max_students", 1)
-        if booked < max_s:
-            keyboard.append([
-                InlineKeyboardButton(
-                    f"✏️ Записаться · {l['title']} ({l['lesson_date']} {l['lesson_time']})",
-                    callback_data=f"book_{l['id']}",
-                )
-            ])
-    if not keyboard:
-        await update.message.reply_text(text)
-        return
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(text, reply_markup=reply_markup)
+    try:
+        lessons = await db.get_upcoming_lessons(limit=_LESSONS_LIST_MAX + 1)
+        if not lessons:
+            await update.message.reply_text(
+                "📭 Пока нет доступных уроков.\n\n"
+                "Следи за обновлениями — новые слоты появятся здесь.",
+            )
+            return
+        # Показываем не больше _LESSONS_LIST_MAX, чтобы сообщение не обрезалось
+        show = lessons[: _LESSONS_LIST_MAX]
+        text = "📋 Доступные уроки\n\nВыбери урок и нажми кнопку записи:\n\n" + "\n\n".join(format_lesson(l) for l in show)
+        if len(text) > _SCHEDULE_TEXT_MAX:
+            text = text[:_SCHEDULE_TEXT_MAX - 80] + "\n\n… (показаны не все уроки)"
+        if len(lessons) > _LESSONS_LIST_MAX:
+            text += f"\n\n(показано {len(show)} из {len(lessons)} уроков)"
+        keyboard = []
+        for l in show:
+            booked = l.get("booked_count", 0)
+            max_s = l.get("max_students", 1)
+            if booked < max_s:
+                btn_label = f"✏️ · {l.get('title', 'Урок')} ({l.get('lesson_date', '')} {l.get('lesson_time', '')})"
+                if len(btn_label) > 60:
+                    btn_label = btn_label[:57] + "…"
+                keyboard.append([
+                    InlineKeyboardButton(btn_label, callback_data=f"book_{l['id']}"),
+                ])
+        if not keyboard:
+            await update.message.reply_text(text)
+            return
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(text, reply_markup=reply_markup)
+    except Exception as e:
+        logger.exception("lessons_list: %s", e)
+        try:
+            await update.message.reply_text(
+                "Не удалось загрузить список уроков. Попробуй ещё раз или нажми /start.",
+            )
+        except Exception:
+            pass
 
 
 async def _build_my_bookings_message(user_id: int, username: str):
@@ -497,26 +515,29 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
 
         if data == "student_lessons":
-            lessons = await db.get_upcoming_lessons()
+            lessons = await db.get_upcoming_lessons(limit=_LESSONS_LIST_MAX + 1)
             if not lessons:
                 await query.edit_message_text(
                     "📭 Пока нет доступных уроков.\n\nСледи за обновлениями — новые слоты появятся здесь.",
                     reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
                 )
                 return
-            text = "📋 Доступные уроки\n\nВыбери урок и нажми кнопку записи:\n\n" + "\n\n".join(format_lesson(l) for l in lessons)
+            show = lessons[: _LESSONS_LIST_MAX]
+            text = "📋 Доступные уроки\n\nВыбери урок и нажми кнопку записи:\n\n" + "\n\n".join(format_lesson(l) for l in show)
+            if len(text) > _SCHEDULE_TEXT_MAX:
+                text = text[:_SCHEDULE_TEXT_MAX - 80] + "\n\n… (показаны не все уроки)"
+            if len(lessons) > _LESSONS_LIST_MAX:
+                text += f"\n\n(показано {len(show)} из {len(lessons)} уроков)"
             keyboard = []
-            for l in lessons:
+            for l in show:
                 booked = l.get("booked_count", 0)
                 max_s = l.get("max_students", 1)
                 if booked < max_s:
-                    keyboard.append([
-                        InlineKeyboardButton(
-                            f"✏️ Записаться · {l['title']} ({l['lesson_date']} {l['lesson_time']})",
-                            callback_data=f"book_{l['id']}",
-                        )
-                    ])
-            keyboard.extend(KEYBOARD_BACK_TO_MAIN)
+                    btn_label = f"✏️ · {l.get('title', 'Урок')} ({l.get('lesson_date', '')} {l.get('lesson_time', '')})"
+                    if len(btn_label) > 60:
+                        btn_label = btn_label[:57] + "…"
+                    keyboard.append([InlineKeyboardButton(btn_label, callback_data=f"book_{l['id']}")])
+            keyboard.append(KEYBOARD_BACK_TO_MAIN[0])
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
         elif data == "student_my":
@@ -1678,9 +1699,11 @@ _SCHEDULE_LESSONS_BUTTONS = 25  # макс. уроков с кнопками (п
 
 
 async def _build_schedule_message(context: ContextTypes.DEFAULT_TYPE):
-    """Возвращает (text, keyboard) для экрана расписания. Период из context.user_data['schedule_range']."""
+    """Возвращает (text, keyboard) для экрана расписания. По умолчанию — только ближайшие 7 дней."""
     user_data = (getattr(context, "user_data", None) or {}) if context else {}
     range_dates = user_data.get("schedule_range")
+    today = datetime.now().strftime("%Y-%m-%d")
+    to_7 = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
     if range_dates:
         from_date, to_date = range_dates
         lessons = await db.get_lessons_in_range(from_date, to_date)
@@ -1688,8 +1711,10 @@ async def _build_schedule_message(context: ContextTypes.DEFAULT_TYPE):
         d2 = datetime.strptime(to_date, "%Y-%m-%d").strftime("%d.%m.%Y")
         period_label = f"{d1} — {d2}"
     else:
-        lessons = await db.get_upcoming_lessons(limit=200)
-        period_label = None
+        # По умолчанию — только следующие 7 дней
+        from_date, to_date = today, to_7
+        lessons = await db.get_lessons_in_range(from_date, to_date)
+        period_label = f"{datetime.strptime(today, '%Y-%m-%d').strftime('%d.%m.%Y')} — {datetime.strptime(to_7, '%Y-%m-%d').strftime('%d.%m.%Y')} (7 дней)"
     blocked = await db.get_all_blocked_slots()
     text = "📅 Расписание"
     if period_label:
@@ -1752,7 +1777,7 @@ async def _build_schedule_message(context: ContextTypes.DEFAULT_TYPE):
     ])
     keyboard.append([
         InlineKeyboardButton("📅 Задать период", callback_data="tutor_schedule_set_range"),
-        InlineKeyboardButton("Показать всё", callback_data="tutor_schedule_clear_range"),
+        InlineKeyboardButton("След. 7 дней", callback_data="tutor_schedule_clear_range"),
     ])
     keyboard.append([
         InlineKeyboardButton("🗑 Очистить всё расписание", callback_data="tutor_clear_schedule"),
