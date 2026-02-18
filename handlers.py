@@ -175,7 +175,7 @@ def _build_main_menu_content(
         keyboard = [
             [InlineKeyboardButton("✏️ Создать урок", callback_data="tutor_add_lesson")],
             [InlineKeyboardButton("📅 Расписание", callback_data="tutor_schedule")],
-            [InlineKeyboardButton("📊 Сводка на завтра", callback_data="tutor_summary")],
+            [InlineKeyboardButton("📊 Сводка на сегодня", callback_data="tutor_summary")],
             [InlineKeyboardButton("📬 Заявки на время", callback_data="tutor_freetime_requests")],
             [InlineKeyboardButton("💬 Как очистить чат", callback_data="tutor_clear_chat_help")],
         ]
@@ -1036,10 +1036,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             if not is_tutor(user_id, context.bot_data):
                 await query.edit_message_text(MSG_ONLY_TUTOR)
                 return
-            tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-            lessons = await db.get_lessons_on_date(tomorrow)
+            today = datetime.now().strftime("%Y-%m-%d")
+            lessons = await db.get_lessons_on_date(today)
             await query.edit_message_text(
-                _format_summary(tomorrow, lessons),
+                _format_summary(today, lessons),
                 reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
             )
 
@@ -1663,39 +1663,39 @@ async def add_lesson_receive(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
 
-def _format_summary(tomorrow: str, lessons: list) -> str:
+def _format_summary(day_date: str, lessons: list) -> str:
     if not lessons:
-        return f"📊 Сводка на завтра ({tomorrow})\n\nУроков нет."
+        return f"📊 Сводка на сегодня ({day_date})\n\nУроков нет."
     total_booked = sum(l.get("booked_count", 0) or 0 for l in lessons)
     lines = [format_lesson(l, with_id=True) for l in lessons]
     return (
-        f"📊 Сводка на завтра ({tomorrow})\n\n"
+        f"📊 Сводка на сегодня ({day_date})\n\n"
         f"Уроков: {len(lessons)}  ·  Записано человек: {total_booked}\n\n"
         + "\n\n".join(lines)
     )
 
 
 async def summary_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Сводка на завтра для репетитора."""
+    """Сводка на сегодня для репетитора."""
     if not is_tutor(update.effective_user.id, context.bot_data):
         await update.message.reply_text(MSG_ONLY_TUTOR)
         return
-    tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-    lessons = await db.get_lessons_on_date(tomorrow)
-    await update.message.reply_text(_format_summary(tomorrow, lessons))
+    today = datetime.now().strftime("%Y-%m-%d")
+    lessons = await db.get_lessons_on_date(today)
+    await update.message.reply_text(_format_summary(today, lessons))
 
 
 async def daily_summary_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Ежедневная сводка репетитору (вызывается по расписанию)."""
-    tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-    lessons = await db.get_lessons_on_date(tomorrow)
+    """Ежедневная сводка репетитору на сегодня (вызывается по расписанию)."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    lessons = await db.get_lessons_on_date(today)
     tutor_id = context.bot_data.get("tutor_user_id")
     if not tutor_id:
         return
     try:
         await context.bot.send_message(
             chat_id=tutor_id,
-            text=_format_summary(tomorrow, lessons),
+            text=_format_summary(today, lessons),
         )
     except Exception:
         pass
@@ -1758,6 +1758,7 @@ async def _build_schedule_message(context: ContextTypes.DEFAULT_TYPE):
     else:
         text += "\n\n"
     if lessons:
+        text += "У каждого урока под сообщением: кнопки 👥 Кто записан, 🗑 Удалить урок, 🔗 Ссылка на урок.\n\n"
         # Группируем уроки с одинаковыми названием и временем (повторяющиеся)
         by_key = {}
         for l in lessons:
@@ -1778,25 +1779,33 @@ async def _build_schedule_message(context: ContextTypes.DEFAULT_TYPE):
     else:
         text += "Уроков пока нет.\n\n"
     if blocked:
-        # Группируем по (день, время); время нормализуем, чтобы 20:00 и "20:00 " не разъезжались
-        by_slot = {}
+        # Группируем по дню недели, внутри дня — по времени; между днями — разделитель
+        by_day = {}
         for b in blocked:
-            key = (b["day_of_week"], _normalize_slot_time(b.get("lesson_time", "") or ""))
-            by_slot.setdefault(key, []).append(b)
-        text += "\n\n🔒 Занятые слоты (это время нельзя бронировать):\n"
-        for (dow, lt), slots in sorted(by_slot.items(), key=lambda x: (x[0][0], x[0][1])):
-            day = DAY_NAMES[dow]
-            names = ", ".join(s["student_name"] for s in slots)
-            text += f"   • {day} {lt} — {names}\n"
+            dow = b["day_of_week"]
+            by_day.setdefault(dow, []).append(b)
+        text += "\n\n🔒 Занятые слоты (это время нельзя бронировать):\n\n"
+        for dow in sorted(by_day.keys()):
+            day_name = DAY_NAMES_FULL[dow].capitalize()
+            text += f"——— {day_name} ———\n"
+            slots_day = by_day[dow]
+            by_time = {}
+            for b in slots_day:
+                key = _normalize_slot_time(b.get("lesson_time", "") or "")
+                by_time.setdefault(key, []).append(b)
+            for lt in sorted(by_time.keys()):
+                slots = by_time[lt]
+                names = ", ".join(s["student_name"] for s in slots)
+                text += f"   • {DAY_NAMES[dow]} {lt} — {names}\n"
+            text += "\n"
     if len(text) > _SCHEDULE_TEXT_MAX:
         text = text[:_SCHEDULE_TEXT_MAX - 50] + "\n\n… (задайте период, чтобы увидеть меньше)"
     keyboard = []
     for l in lessons[: _SCHEDULE_LESSONS_BUTTONS]:
+        date_short = datetime.strptime(l["lesson_date"], "%Y-%m-%d").strftime("%d.%m") if l.get("lesson_date") else ""
         keyboard.append([
-            InlineKeyboardButton(f"👥 · {l['title']} ({l['lesson_date']})", callback_data=f"tutor_bookings_{l['id']}"),
-        ])
-        keyboard.append([
-            InlineKeyboardButton("🗑 Удалить урок", callback_data=f"tutor_del_{l['id']}"),
+            InlineKeyboardButton(f"👥 {date_short} {l.get('lesson_time', '')}", callback_data=f"tutor_bookings_{l['id']}"),
+            InlineKeyboardButton("🗑 Удалить", callback_data=f"tutor_del_{l['id']}"),
             InlineKeyboardButton("🔗 Ссылка", callback_data=f"tutor_lesson_link_{l['id']}"),
         ])
     if len(lessons) > _SCHEDULE_LESSONS_BUTTONS:
