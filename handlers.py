@@ -221,6 +221,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     for key in FLOW_KEYS:
         context.user_data.pop(key, None)
     user = update.effective_user
+    # Админ при каждом /start снова видит выбор из трёх режимов
+    if is_admin(user.id, context.bot_data):
+        context.user_data.pop("admin_mode", None)
     logger.info(
         "start: user_id=%s, tutor_ids=%s, is_tutor=%s",
         user.id,
