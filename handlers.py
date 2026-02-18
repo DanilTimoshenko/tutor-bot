@@ -940,7 +940,20 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 await query.edit_message_text(MSG_ONLY_TUTOR)
                 return
             text, reply_markup = await _build_schedule_message(context)
-            await query.edit_message_text(text, reply_markup=reply_markup)
+            if len(text) > _SCHEDULE_TEXT_MAX:
+                text = text[:_SCHEDULE_TEXT_MAX] + "\n\n…"
+            try:
+                await query.edit_message_text(text, reply_markup=reply_markup)
+            except Exception as e:
+                logger.warning("tutor_schedule edit_message_text failed: %s", e)
+                try:
+                    await query.message.reply_text(text, reply_markup=reply_markup)
+                except Exception as e2:
+                    logger.exception("tutor_schedule reply_text failed: %s", e2)
+                    await query.edit_message_text(
+                        "Расписание слишком большое. Нажми «📅 Задать период» и укажи даты.",
+                        reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
+                    )
 
         elif data == "tutor_schedule_set_range":
             if not is_tutor(user_id, context.bot_data):
@@ -1659,6 +1672,11 @@ def _format_date_header(lesson_date: str) -> str:
     return f"{DAY_NAMES_FULL[d.weekday()].capitalize()}, {d.strftime('%d.%m.%Y')}"
 
 
+# Лимиты для экрана расписания (Telegram: сообщение до 4096 символов, до ~100 кнопок)
+_SCHEDULE_TEXT_MAX = 4090
+_SCHEDULE_LESSONS_BUTTONS = 25  # макс. уроков с кнопками (по 2 кнопки на урок)
+
+
 async def _build_schedule_message(context: ContextTypes.DEFAULT_TYPE):
     """Возвращает (text, keyboard) для экрана расписания. Период из context.user_data['schedule_range']."""
     user_data = (getattr(context, "user_data", None) or {}) if context else {}
@@ -1670,7 +1688,7 @@ async def _build_schedule_message(context: ContextTypes.DEFAULT_TYPE):
         d2 = datetime.strptime(to_date, "%Y-%m-%d").strftime("%d.%m.%Y")
         period_label = f"{d1} — {d2}"
     else:
-        lessons = await db.get_upcoming_lessons(limit=60)
+        lessons = await db.get_upcoming_lessons(limit=200)
         period_label = None
     blocked = await db.get_all_blocked_slots()
     text = "📅 Расписание"
@@ -1679,14 +1697,23 @@ async def _build_schedule_message(context: ContextTypes.DEFAULT_TYPE):
     else:
         text += "\n\n"
     if lessons:
-        by_date = {}
+        # Группируем уроки с одинаковыми названием и временем (повторяющиеся)
+        by_key = {}
         for l in lessons:
-            d = l["lesson_date"]
-            by_date.setdefault(d, []).append(l)
-        for date in sorted(by_date.keys()):
-            text += f"\n——— {_format_date_header(date)} ———\n\n"
-            for l in by_date[date]:
-                text += format_lesson(l, with_id=True) + "\n\n"
+            key = (l["title"], (l.get("lesson_time") or "").strip())
+            by_key.setdefault(key, []).append(l)
+        for (title, lt), group in sorted(by_key.items(), key=lambda x: (min(l["lesson_date"] for l in x[1]), x[0][1])):
+            dates_fmt = []
+            for l in sorted(group, key=lambda x: x["lesson_date"]):
+                d = datetime.strptime(l["lesson_date"], "%Y-%m-%d").strftime("%d.%m")
+                dates_fmt.append(d)
+            n = len(group)
+            if n <= 5:
+                dates_str = ", ".join(dates_fmt)
+            else:
+                dates_str = ", ".join(dates_fmt[:3]) + f" … ещё {n - 3} (всего {n})"
+            text += f"▫️ {title} · {lt}\n   📅 {dates_str}\n\n"
+        text += f"Всего уроков: {len(lessons)}\n\n"
     else:
         text += "Уроков пока нет.\n\n"
     if blocked:
@@ -1700,14 +1727,21 @@ async def _build_schedule_message(context: ContextTypes.DEFAULT_TYPE):
             day = DAY_NAMES[dow]
             names = ", ".join(s["student_name"] for s in slots)
             text += f"   • {day} {lt} — {names}\n"
+    if len(text) > _SCHEDULE_TEXT_MAX:
+        text = text[:_SCHEDULE_TEXT_MAX - 50] + "\n\n… (задайте период, чтобы увидеть меньше)"
     keyboard = []
-    for l in lessons:
+    for l in lessons[: _SCHEDULE_LESSONS_BUTTONS]:
         keyboard.append([
-            InlineKeyboardButton(f"👥 Кто записан · {l['title']} ({l['lesson_date']})", callback_data=f"tutor_bookings_{l['id']}"),
+            InlineKeyboardButton(f"👥 · {l['title']} ({l['lesson_date']})", callback_data=f"tutor_bookings_{l['id']}"),
         ])
         keyboard.append([
             InlineKeyboardButton("🗑 Удалить урок", callback_data=f"tutor_del_{l['id']}"),
         ])
+    if len(lessons) > _SCHEDULE_LESSONS_BUTTONS:
+        keyboard.append([InlineKeyboardButton(
+            f"… ещё {len(lessons) - _SCHEDULE_LESSONS_BUTTONS} уроков — задайте период",
+            callback_data="tutor_schedule_set_range",
+        )])
     for b in blocked:
         day = DAY_NAMES[b["day_of_week"]]
         keyboard.append([
@@ -1732,7 +1766,15 @@ async def schedule_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(MSG_ONLY_TUTOR)
         return
     text, reply_markup = await _build_schedule_message(context)
-    await update.message.reply_text(text, reply_markup=reply_markup)
+    if len(text) > _SCHEDULE_TEXT_MAX:
+        text = text[:_SCHEDULE_TEXT_MAX] + "\n\n… (задайте период в боте)"
+    try:
+        await update.message.reply_text(text, reply_markup=reply_markup)
+    except Exception as e:
+        logger.warning("schedule_tutor reply_text failed: %s", e)
+        await update.message.reply_text(
+            "Расписание слишком большое. Нажми «Расписание» в меню и выбери «📅 Задать период».",
+        )
 
 
 async def schedule_range_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
