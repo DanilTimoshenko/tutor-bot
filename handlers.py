@@ -16,7 +16,7 @@ import homework_llm
 logger = logging.getLogger(__name__)
 
 # Ключи пошаговых диалогов — при старте одного сбрасываем остальные, чтобы не «подхватывать» сообщения
-FLOW_KEYS = ("add_lesson", "block_slot", "request_slot", "schedule_range_input", "homework_help")
+FLOW_KEYS = ("add_lesson", "block_slot", "request_slot", "schedule_range_input", "homework_help", "lesson_link_input")
 
 # Кнопка «Вернуться на главную» — чтобы после любого действия можно было не писать /start
 KEYBOARD_BACK_TO_MAIN = [[InlineKeyboardButton("🏠 Вернуться на главную", callback_data="main_menu")]]
@@ -1011,6 +1011,27 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                         "Период сброшен. Нажмите «Расписание» в меню или /schedule.",
                     )
 
+        elif data.startswith("tutor_lesson_link_"):
+            if not is_tutor(user_id, context.bot_data):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            lesson_id = int(data.replace("tutor_lesson_link_", ""))
+            lesson = await db.get_lesson(lesson_id)
+            if not lesson:
+                await query.answer("Урок не найден.")
+                return
+            _clear_other_flows(context, "lesson_link_input")
+            context.user_data["lesson_link_input"] = {"lesson_id": lesson_id}
+            current = (lesson.get("lesson_link") or "").strip()
+            prompt = (
+                f"🔗 Ссылка на урок «{lesson.get('title', 'Урок')}» ({lesson.get('lesson_date')} {lesson.get('lesson_time')})\n\n"
+                "Пришли ссылку (Zoom, Meet и т.п.) — бот отправит её записанным ученикам за минуту до начала.\n"
+                "Или напиши минус (-), чтобы убрать ссылку."
+            )
+            if current:
+                prompt += f"\n\nСейчас: {current[:60]}{'…' if len(current) > 60 else ''}"
+            await query.edit_message_text(prompt)
+
         elif data == "tutor_summary":
             if not is_tutor(user_id, context.bot_data):
                 await query.edit_message_text(MSG_ONLY_TUTOR)
@@ -1429,6 +1450,8 @@ async def _send_confirm_summary(update: Update, context: ContextTypes.DEFAULT_TY
     if weeks >= 2 or len(times) > 1:
         summary += f"\n📅 Будет создано уроков: {total}\n"
     summary += f"\n📅 Дата: {data['date']}" + (f" (и ещё {weeks - 1} нед.)" if weeks > 1 else "")
+    if data.get("lesson_link"):
+        summary += f"\n🔗 Ссылка: {data['lesson_link'][:50]}{'…' if len(data['lesson_link']) > 50 else ''}"
     summary += "\n\nСоздать? Напиши да или нет."
     await update.message.reply_text(summary)
 
@@ -1448,6 +1471,7 @@ async def _do_create_lessons(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 lesson_time=t,
                 max_students=data.get("max_students", 1),
                 description=data.get("description", ""),
+                lesson_link=data.get("lesson_link", ""),
             )
             await _schedule_reminders(context, lesson_id)
             created.append((lesson_id, lesson_date, t))
@@ -1575,20 +1599,31 @@ async def add_lesson_receive(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
             return
         data["repeat_weeks"] = 1
-        data["step"] = "confirm"
-        await _send_confirm_summary(update, context, data)
+        data["step"] = "link"
+        await update.message.reply_text(
+            "✏️ Ссылка на урок (необязательно)\n\n"
+            "Пришли ссылку (Zoom, Meet) — бот отправит её записанным за минуту до начала. Или минус (-) чтобы пропустить.",
+        )
         return
     if step == "repeat_weeks":
         try:
             n = int(text.strip())
             if 2 <= n <= 52:
                 data["repeat_weeks"] = n
-                data["step"] = "confirm"
-                await _send_confirm_summary(update, context, data)
+                data["step"] = "link"
+                await update.message.reply_text(
+                    "✏️ Ссылка на урок (необязательно)\n\n"
+                    "Пришли ссылку (Zoom, Meet) — бот отправит её записанным за минуту до начала. Или минус (-) чтобы пропустить.",
+                )
                 return
         except ValueError:
             pass
         await update.message.reply_text("❌ Введи число от 2 до 52.")
+        return
+    if step == "link":
+        data["lesson_link"] = text.strip() if text != "-" else ""
+        data["step"] = "confirm"
+        await _send_confirm_summary(update, context, data)
         return
     if step == "confirm":
         if text.lower() in ("да", "yes", "д", "y"):
@@ -1668,15 +1703,16 @@ async def daily_summary_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def send_lesson_links_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """За 1 минуту до начала урока отправляет каждому записанному ученику ссылку на урок."""
-    link = (context.bot_data.get("lesson_link") or "").strip()
-    if not link:
-        return
+    global_link = (context.bot_data.get("lesson_link") or "").strip()
     now = datetime.now()
     target = now + timedelta(minutes=1)
     target_date = target.strftime("%Y-%m-%d")
     target_time = target.strftime("%H:%M")
     lessons = await db.get_lessons_at(target_date, target_time)
     for lesson in lessons:
+        link = (lesson.get("lesson_link") or "").strip() or global_link
+        if not link:
+            continue
         bookings = await db.get_bookings_for_lesson(lesson["id"])
         title = lesson.get("title") or "Урок"
         msg = f"🕐 Через минуту начало: {title}\n\n👉 Ссылка на урок: {link}"
@@ -1761,6 +1797,7 @@ async def _build_schedule_message(context: ContextTypes.DEFAULT_TYPE):
         ])
         keyboard.append([
             InlineKeyboardButton("🗑 Удалить урок", callback_data=f"tutor_del_{l['id']}"),
+            InlineKeyboardButton("🔗 Ссылка", callback_data=f"tutor_lesson_link_{l['id']}"),
         ])
     if len(lessons) > _SCHEDULE_LESSONS_BUTTONS:
         keyboard.append([InlineKeyboardButton(
@@ -1932,6 +1969,27 @@ async def block_slot_receive(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("Напиши да или нет.")
         return True
     return False
+
+
+async def lesson_link_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Обработка ввода ссылки на урок (после нажатия «🔗 Ссылка» в расписании)."""
+    data = context.user_data.get("lesson_link_input")
+    if not data:
+        return False
+    text = (update.message.text or "").strip()
+    lesson_id = data.get("lesson_id")
+    context.user_data.pop("lesson_link_input", None)
+    if text == "-":
+        await db.update_lesson_link(lesson_id, "")
+        await update.message.reply_text("✅ Ссылка убрана. За минуту до урока ученикам ничего не придёт (если не задана общая ссылка в настройках).")
+    else:
+        if not text or len(text) < 5:
+            await update.message.reply_text("Ссылка слишком короткая. Пришли полную ссылку (https://...) или минус (-) чтобы убрать.")
+            context.user_data["lesson_link_input"] = data
+            return True
+        await db.update_lesson_link(lesson_id, text)
+        await update.message.reply_text("✅ Ссылка сохранена. За минуту до начала урока бот отправит её всем записанным на этот урок.")
+    return True
 
 
 async def _refresh_schedule_message(query, context: ContextTypes.DEFAULT_TYPE) -> None:

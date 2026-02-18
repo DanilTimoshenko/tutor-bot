@@ -24,6 +24,7 @@ async def init_db():
                 duration_minutes INTEGER DEFAULT 60,
                 max_students INTEGER DEFAULT 1,
                 description TEXT DEFAULT '',
+                lesson_link TEXT DEFAULT '',
                 created_at TEXT NOT NULL
             )
         """)
@@ -41,6 +42,10 @@ async def init_db():
         """)
         try:
             await db.execute("ALTER TABLE lessons ADD COLUMN description TEXT DEFAULT ''")
+        except Exception:
+            pass
+        try:
+            await db.execute("ALTER TABLE lessons ADD COLUMN lesson_link TEXT DEFAULT ''")
         except Exception:
             pass
         # blocked_slots: несколько учеников на одно время (без UNIQUE)
@@ -112,13 +117,14 @@ async def add_lesson(
     duration_minutes: int = 60,
     max_students: int = 1,
     description: str = "",
+    lesson_link: str = "",
 ) -> int:
     """Добавляет урок. Возвращает id урока."""
     async with aiosqlite.connect(DB_PATH) as conn:
         cursor = await conn.execute(
-            """INSERT INTO lessons (title, lesson_date, lesson_time, duration_minutes, max_students, description, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (title, lesson_date, lesson_time, duration_minutes, max_students, description or "", datetime.utcnow().isoformat()),
+            """INSERT INTO lessons (title, lesson_date, lesson_time, duration_minutes, max_students, description, lesson_link, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (title, lesson_date, lesson_time, duration_minutes, max_students, description or "", (lesson_link or "").strip(), datetime.utcnow().isoformat()),
         )
         await conn.commit()
         return cursor.lastrowid
@@ -271,6 +277,18 @@ async def get_lesson(lesson_id: int):
         )
         row = await cursor.fetchone()
         return dict(row) if row else None
+
+
+async def update_lesson_link(lesson_id: int, link: str) -> bool:
+    """Установить или убрать ссылку на урок. Возвращает True если урок найден."""
+    link = (link or "").strip()
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "UPDATE lessons SET lesson_link = ? WHERE id = ?",
+            (link, lesson_id),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
 
 
 async def get_bookings_for_lesson(lesson_id: int):
