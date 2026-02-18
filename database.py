@@ -90,6 +90,18 @@ async def init_db():
                 await db.execute(f"ALTER TABLE ege_tasks ADD COLUMN {col} TEXT DEFAULT ''")
             except Exception:
                 pass
+        # Заявки учеников на свободное время (раздел для репетитора)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS free_time_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                username TEXT DEFAULT '',
+                first_name TEXT DEFAULT '',
+                requested_date TEXT NOT NULL,
+                requested_time TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
         await db.commit()
 
 
@@ -123,6 +135,18 @@ async def get_lessons_on_date(lesson_date: str):
                WHERE l.lesson_date = ?
                ORDER BY l.lesson_time""",
             (lesson_date,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def get_lessons_at(lesson_date: str, lesson_time: str):
+    """Уроки на указанные дату и время (для отправки ссылки за минуту до начала)."""
+    async with aiosqlite.connect(DB_PATH) as conn:
+        conn.row_factory = aiosqlite.Row
+        cursor = await conn.execute(
+            "SELECT * FROM lessons WHERE lesson_date = ? AND lesson_time = ?",
+            (lesson_date, lesson_time),
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
@@ -343,6 +367,35 @@ async def get_all_lesson_ids():
         cursor = await db.execute("SELECT id FROM lessons")
         rows = await cursor.fetchall()
         return [r[0] for r in rows]
+
+
+async def add_free_time_request(
+    user_id: int,
+    username: str,
+    first_name: str,
+    requested_date: str,
+    requested_time: str,
+) -> None:
+    """Сохранить заявку ученика на свободное время."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """INSERT INTO free_time_requests (user_id, username, first_name, requested_date, requested_time, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (user_id, username or "", first_name or "", requested_date, requested_time, datetime.utcnow().isoformat()),
+        )
+        await db.commit()
+
+
+async def get_free_time_requests(limit: int = 50):
+    """Список заявок на свободное время (новые сверху)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """SELECT * FROM free_time_requests ORDER BY created_at DESC LIMIT ?""",
+            (limit,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
 
 
 async def clear_all_schedule() -> tuple[int, int]:

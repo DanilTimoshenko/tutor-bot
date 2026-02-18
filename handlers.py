@@ -161,7 +161,7 @@ def _build_main_menu_content(
             [InlineKeyboardButton("👤 Репетитор", callback_data="student_tutor")],
         ]
         if bot_data.get("openai_api_key"):
-            keyboard.append([InlineKeyboardButton("📝 Помощь с домашкой", callback_data="student_homework_help")])
+            keyboard.append([InlineKeyboardButton("AITimoshenko'sAtelie", callback_data="student_homework_help")])
         keyboard.append([InlineKeyboardButton("📚 Раздел ЕГЭ", callback_data="student_ege")])
         return text, keyboard
 
@@ -176,12 +176,13 @@ def _build_main_menu_content(
             [InlineKeyboardButton("✏️ Создать урок", callback_data="tutor_add_lesson")],
             [InlineKeyboardButton("📅 Расписание", callback_data="tutor_schedule")],
             [InlineKeyboardButton("📊 Сводка на завтра", callback_data="tutor_summary")],
+            [InlineKeyboardButton("📬 Заявки на время", callback_data="tutor_freetime_requests")],
             [InlineKeyboardButton("💬 Как очистить чат", callback_data="tutor_clear_chat_help")],
-            [InlineKeyboardButton("📥 Скачать БД", callback_data="admin_download_db")],
         ]
-        # Кнопка «Как видят ученики» — только у админа
+        # Кнопка «Как видят ученики» и «Скачать БД» — только у админа
         if is_admin(user_id, bot_data):
-            keyboard.insert(4, [InlineKeyboardButton("👀 Как видят ученики", callback_data="tutor_preview_student")])
+            keyboard.insert(5, [InlineKeyboardButton("👀 Как видят ученики", callback_data="tutor_preview_student")])
+            keyboard.append([InlineKeyboardButton("📥 Скачать БД", callback_data="admin_download_db")])
         if is_admin(user_id, bot_data) and (mode == "admin" or mode is None):
             keyboard.append([InlineKeyboardButton("➕ Добавить репетитора", callback_data="admin_add_tutor")])
     else:
@@ -192,7 +193,7 @@ def _build_main_menu_content(
             [InlineKeyboardButton("👤 Репетитор", callback_data="student_tutor")],
         ]
         if bot_data.get("openai_api_key"):
-            keyboard.append([InlineKeyboardButton("📝 Помощь с домашкой", callback_data="student_homework_help")])
+            keyboard.append([InlineKeyboardButton("AITimoshenko'sAtelie", callback_data="student_homework_help")])
         keyboard.append([InlineKeyboardButton("📚 Раздел ЕГЭ", callback_data="student_ege")])
     return text, keyboard
 
@@ -320,6 +321,13 @@ async def request_slot_receive(update: Update, context: ContextTypes.DEFAULT_TYP
         data["time"] = time
         context.user_data.pop("request_slot", None)
         student_name = user.first_name or user.username or f"ID{user.id}"
+        await db.add_free_time_request(
+            user.id,
+            user.username or "",
+            user.first_name or "",
+            data["date"],
+            data["time"],
+        )
         req = (
             "🕐 Запрос на свободное время\n\n"
             f"👤 {student_name}"
@@ -543,7 +551,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             _clear_other_flows(context, "homework_help")
             context.user_data["homework_help"] = True
             await query.edit_message_text(
-                "📝 Помощь с домашкой\n\n"
+                "AITimoshenko'sAtelie\n\n"
                 "Напиши вопрос или задание — постараюсь объяснить и подсказать ход решения.\n\n"
                 "Для выхода нажми кнопку ниже или /start.",
                 reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
@@ -883,8 +891,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
 
         elif data == "admin_download_db":
-            if not is_tutor(user_id, context.bot_data):
-                await query.edit_message_text(MSG_ONLY_TUTOR)
+            if not is_admin(user_id, context.bot_data):
+                await query.edit_message_text("Скачать БД может только администратор.")
                 return
             try:
                 path = db.DB_PATH
@@ -1082,7 +1090,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 [InlineKeyboardButton("👤 Репетитор", callback_data="student_tutor")],
             ]
             if context.bot_data.get("openai_api_key"):
-                keyboard.append([InlineKeyboardButton("📝 Помощь с домашкой", callback_data="student_homework_help")])
+                keyboard.append([InlineKeyboardButton("AITimoshenko'sAtelie", callback_data="student_homework_help")])
             keyboard.append([InlineKeyboardButton("📚 Раздел ЕГЭ", callback_data="student_ege")])
             await query.message.reply_text(
                 "👀 Так видят ученики:\n━━━━━━━━━━━━━━━━━━━━",
@@ -1091,6 +1099,32 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 chat_id=user_id,
                 text=preview_text,
                 reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+
+        elif data == "tutor_freetime_requests":
+            if not is_tutor(user_id, context.bot_data):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            requests_list = await db.get_free_time_requests(limit=30)
+            if not requests_list:
+                await query.edit_message_text(
+                    "📬 Заявки на свободное время\n\nПока нет заявок от учеников.",
+                    reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
+                )
+                return
+            lines = []
+            for r in requests_list:
+                name = (r.get("first_name") or r.get("username") or f"ID{r['user_id']}").strip()
+                uname = (r.get("username") or "").strip()
+                if uname:
+                    name += f" @{uname}"
+                lines.append(f"• {name} — {r['requested_date']} в {r['requested_time']}")
+            text = "📬 Заявки на свободное время\n\n" + "\n".join(lines)
+            if len(text) > 4000:
+                text = text[:3990] + "\n\n… (показаны последние)"
+            await query.edit_message_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
             )
 
         elif data.startswith("book_"):
@@ -1596,6 +1630,27 @@ async def daily_summary_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
         )
     except Exception:
         pass
+
+
+async def send_lesson_links_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """За 1 минуту до начала урока отправляет каждому записанному ученику ссылку на урок."""
+    link = (context.bot_data.get("lesson_link") or "").strip()
+    if not link:
+        return
+    now = datetime.now()
+    target = now + timedelta(minutes=1)
+    target_date = target.strftime("%Y-%m-%d")
+    target_time = target.strftime("%H:%M")
+    lessons = await db.get_lessons_at(target_date, target_time)
+    for lesson in lessons:
+        bookings = await db.get_bookings_for_lesson(lesson["id"])
+        title = lesson.get("title") or "Урок"
+        msg = f"🕐 Через минуту начало: {title}\n\n👉 Ссылка на урок: {link}"
+        for b in bookings:
+            try:
+                await context.bot.send_message(chat_id=b["user_id"], text=msg)
+            except Exception:
+                pass
 
 
 def _format_date_header(lesson_date: str) -> str:

@@ -62,6 +62,7 @@ def main() -> None:
     app.bot_data["yandex_api_key"] = _yandex_key
     app.bot_data["yandex_folder_id"] = _yandex_folder
     app.bot_data["openai_api_key"] = _yandex_key and _yandex_folder
+    app.bot_data["lesson_link"] = (getattr(config, "LESSON_LINK", None) or "").strip() or None
 
     app.add_handler(CommandHandler("start", h.start))
     app.add_handler(CommandHandler("help", h.help_cmd))
@@ -145,6 +146,13 @@ def main() -> None:
             application.job_queue.run_daily(
                 h.daily_summary_callback,
                 time=dt_time(hour=int(summary_hour), minute=0),
+            )
+        # За 1 минуту до урока — отправить ссылку записанным ученикам (если LESSON_LINK задан)
+        if application.bot_data.get("lesson_link") and application.job_queue:
+            application.job_queue.run_repeating(
+                h.send_lesson_links_callback,
+                interval=60,
+                first=10,
             )
         logger.info("Database initialized.")
 
