@@ -48,6 +48,14 @@ async def init_db():
             await db.execute("ALTER TABLE lessons ADD COLUMN lesson_link TEXT DEFAULT ''")
         except Exception:
             pass
+        try:
+            await db.execute("ALTER TABLE blocked_slots ADD COLUMN lesson_link TEXT DEFAULT ''")
+        except Exception:
+            pass
+        try:
+            await db.execute("ALTER TABLE blocked_slots ADD COLUMN student_user_id INTEGER")
+        except Exception:
+            pass
         # blocked_slots: несколько учеников на одно время (без UNIQUE)
         cursor = await db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='blocked_slots'"
@@ -261,6 +269,18 @@ async def get_blocked_slots(day_of_week: int, lesson_time: str) -> list:
         return [dict(r) for r in rows]
 
 
+async def get_blocked_slots_for_day(day_of_week: int) -> list:
+    """Все закреплённые слоты на один день недели (для рассылки ссылки и сводки)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM blocked_slots WHERE day_of_week = ? ORDER BY lesson_time",
+            (day_of_week,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
 async def delete_blocked_slot(slot_id: int) -> bool:
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute("DELETE FROM blocked_slots WHERE id = ?", (slot_id,))
@@ -428,6 +448,42 @@ async def clear_all_schedule() -> tuple[int, int]:
         await db.execute("DELETE FROM blocked_slots")
         await db.commit()
     return (n_lessons, n_slots)
+
+
+async def clear_lessons_only() -> int:
+    """Удаляет только уроки и записи на них; занятые слоты не трогает. Возвращает кол-во удалённых уроков."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM lessons")
+        (n,) = (await cursor.fetchone())
+        await db.execute("DELETE FROM bookings")
+        await db.execute("DELETE FROM lessons")
+        await db.commit()
+    return n
+
+
+async def update_blocked_slot_link(slot_id: int, link: str) -> bool:
+    """Установить ссылку для закреплённого слота."""
+    link = (link or "").strip()
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "UPDATE blocked_slots SET lesson_link = ? WHERE id = ?",
+            (link, slot_id),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+
+
+async def update_blocked_slots_user_id(username: str, user_id: int) -> None:
+    """Привязать user_id к слотам с данным username (чтобы отправлять ссылку за минуту до времени)."""
+    if not (username or "").strip():
+        return
+    u = (username or "").strip().lower().lstrip("@")
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE blocked_slots SET student_user_id = ? WHERE LOWER(TRIM(REPLACE(COALESCE(student_username,''), '@', ''))) = ?",
+            (user_id, u),
+        )
+        await db.commit()
 
 
 # ——— Раздел ЕГЭ (27 заданий) ———

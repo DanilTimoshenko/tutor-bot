@@ -16,7 +16,7 @@ import homework_llm
 logger = logging.getLogger(__name__)
 
 # Ключи пошаговых диалогов — при старте одного сбрасываем остальные, чтобы не «подхватывать» сообщения
-FLOW_KEYS = ("add_lesson", "block_slot", "request_slot", "schedule_range_input", "homework_help", "lesson_link_input")
+FLOW_KEYS = ("add_lesson", "block_slot", "request_slot", "schedule_range_input", "homework_help", "lesson_link_input", "blocked_slot_link_input")
 
 # Кнопка «Вернуться на главную» — чтобы после любого действия можно было не писать /start
 KEYBOARD_BACK_TO_MAIN = [[InlineKeyboardButton("🏠 Вернуться на главную", callback_data="main_menu")]]
@@ -235,6 +235,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user.id, user.first_name, context.bot_data, context.user_data
     )
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    if user.username:
+        await db.update_blocked_slots_user_id(user.username, user.id)
 
 
 async def materials_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1037,11 +1039,58 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 await query.edit_message_text(MSG_ONLY_TUTOR)
                 return
             today = datetime.now().strftime("%Y-%m-%d")
+            today_weekday = datetime.now().weekday()
             lessons = await db.get_lessons_on_date(today)
+            all_blocked = await db.get_all_blocked_slots()
+            blocked_today = [b for b in all_blocked if b["day_of_week"] == today_weekday]
+            keyboard = [
+                [InlineKeyboardButton("📅 Расписание (удалить уроки)", callback_data="tutor_schedule")],
+            ]
+            keyboard.extend(KEYBOARD_BACK_TO_MAIN)
             await query.edit_message_text(
-                _format_summary(today, lessons),
-                reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
+                _format_summary(today, lessons, blocked_today),
+                reply_markup=InlineKeyboardMarkup(keyboard),
             )
+
+        elif data == "tutor_clear_lessons_only":
+            if not is_tutor(user_id, context.bot_data):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            keyboard = [
+                [InlineKeyboardButton("✅ Подтвердить", callback_data="tutor_clear_lessons_confirm")],
+                [InlineKeyboardButton("❌ Отмена", callback_data="tutor_clear_lessons_cancel")],
+            ]
+            await query.edit_message_text(
+                "🗑 Удалить все уроки?\n\n"
+                "Будут удалены все уроки и записи на них. Занятые слоты (закреплённое время) останутся.",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+
+        elif data == "tutor_clear_lessons_confirm":
+            if not is_tutor(user_id, context.bot_data):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            lesson_ids = await db.get_all_lesson_ids()
+            jq = context.application.job_queue
+            if jq and jq.scheduler:
+                for lid in lesson_ids:
+                    for name in (f"remind_1d_{lid}", f"remind_1h_{lid}"):
+                        try:
+                            jq.scheduler.remove_job(name)
+                        except Exception:
+                            pass
+            n = await db.clear_lessons_only()
+            text, reply_markup = await _build_schedule_message(context)
+            await query.edit_message_text(
+                f"✅ Удалено уроков: {n}. Занятые слоты сохранены.\n\n" + text,
+                reply_markup=reply_markup,
+            )
+
+        elif data == "tutor_clear_lessons_cancel":
+            if not is_tutor(user_id, context.bot_data):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            await _refresh_schedule_message(query, context)
 
         elif data == "tutor_clear_schedule":
             if not is_tutor(user_id, context.bot_data):
@@ -1128,6 +1177,17 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             else:
                 await query.edit_message_text("Не удалось снять слот.", reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN))
 
+        elif data.startswith("blocked_slot_link_"):
+            if not is_tutor(user_id, context.bot_data):
+                await query.edit_message_text(MSG_ONLY_TUTOR)
+                return
+            slot_id = int(data.split("_")[-1])
+            _clear_other_flows(context, "blocked_slot_link_input")
+            context.user_data["blocked_slot_link_input"] = {"slot_id": slot_id}
+            await query.edit_message_text(
+                "🔗 Введите ссылку на урок для этого слота (или «-» чтобы убрать ссылку):",
+            )
+
         elif data == "tutor_preview_student":
             if not is_admin(user_id, context.bot_data):
                 await query.edit_message_text("Эта кнопка доступна только администратору.")
@@ -1191,6 +1251,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 first_name=query.from_user.first_name,
             )
             await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN))
+            if ok and query.from_user.username:
+                await db.update_blocked_slots_user_id(query.from_user.username, user_id)
             if ok:
                 lesson = await db.get_lesson(lesson_id)
                 if lesson:
@@ -1663,16 +1725,28 @@ async def add_lesson_receive(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
 
-def _format_summary(day_date: str, lessons: list) -> str:
-    if not lessons:
-        return f"📊 Сводка на сегодня ({day_date})\n\nУроков нет."
-    total_booked = sum(l.get("booked_count", 0) or 0 for l in lessons)
-    lines = [format_lesson(l, with_id=True) for l in lessons]
-    return (
-        f"📊 Сводка на сегодня ({day_date})\n\n"
-        f"Уроков: {len(lessons)}  ·  Записано человек: {total_booked}\n\n"
-        + "\n\n".join(lines)
-    )
+def _format_summary(day_date: str, lessons: list, blocked_today: list | None = None) -> str:
+    parts = [f"📊 Сводка на сегодня ({day_date})\n\n"]
+    if lessons:
+        total_booked = sum(l.get("booked_count", 0) or 0 for l in lessons)
+        parts.append(f"Уроков: {len(lessons)}  ·  Записано человек: {total_booked}\n\n")
+        parts.append("\n\n".join(format_lesson(l, with_id=True) for l in lessons))
+    else:
+        parts.append("Уроков нет.\n\n")
+    if blocked_today:
+        parts.append("\n\n🔒 Закреплённые слоты на сегодня:\n")
+        by_time = {}
+        for b in blocked_today:
+            t = (b.get("lesson_time") or "").strip()
+            by_time.setdefault(t, []).append(b)
+        for t in sorted(by_time.keys()):
+            names = ", ".join(s["student_name"] for s in by_time[t])
+            parts.append(f"   • {t} — {names}\n")
+    if not lessons and not blocked_today:
+        parts.append(
+            "Уроки на другие даты и кнопку «Удалить» смотри в разделе «📅 Расписание»."
+        )
+    return "".join(parts)
 
 
 async def summary_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1681,28 +1755,57 @@ async def summary_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text(MSG_ONLY_TUTOR)
         return
     today = datetime.now().strftime("%Y-%m-%d")
+    today_weekday = datetime.now().weekday()
     lessons = await db.get_lessons_on_date(today)
-    await update.message.reply_text(_format_summary(today, lessons))
+    all_blocked = await db.get_all_blocked_slots()
+    blocked_today = [b for b in all_blocked if b["day_of_week"] == today_weekday]
+    keyboard = [
+        [InlineKeyboardButton("📅 Расписание (удалить уроки)", callback_data="tutor_schedule")],
+    ]
+    keyboard.extend(KEYBOARD_BACK_TO_MAIN)
+    await update.message.reply_text(
+        _format_summary(today, lessons, blocked_today),
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
 
 
 async def daily_summary_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Ежедневная сводка репетитору на сегодня (вызывается по расписанию)."""
     today = datetime.now().strftime("%Y-%m-%d")
+    today_weekday = datetime.now().weekday()
     lessons = await db.get_lessons_on_date(today)
+    all_blocked = await db.get_all_blocked_slots()
+    blocked_today = [b for b in all_blocked if b["day_of_week"] == today_weekday]
     tutor_id = context.bot_data.get("tutor_user_id")
     if not tutor_id:
         return
     try:
         await context.bot.send_message(
             chat_id=tutor_id,
-            text=_format_summary(today, lessons),
+            text=_format_summary(today, lessons, blocked_today),
         )
     except Exception:
         pass
 
 
+def _normalize_slot_time(s: str) -> str:
+    """Нормализует время слота до HH:MM для сравнения."""
+    s = (s or "").strip()
+    if not s:
+        return ""
+    parts = s.split(":")
+    if len(parts) >= 2:
+        try:
+            h, m = int(parts[0]), int(parts[1])
+            return f"{h:02d}:{m:02d}"
+        except ValueError:
+            return s
+    return s
+
+
 async def send_lesson_links_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """За 1 минуту до начала урока отправляет каждому записанному ученику ссылку на урок."""
+    """За 1 минуту до начала урока отправляет каждому записанному ученику ссылку на урок.
+    Также за минуту до времени закреплённого слота отправляет ссылку ученику слота."""
     global_link = (context.bot_data.get("lesson_link") or "").strip()
     now = datetime.now()
     target = now + timedelta(minutes=1)
@@ -1721,6 +1824,24 @@ async def send_lesson_links_callback(context: ContextTypes.DEFAULT_TYPE) -> None
                 await context.bot.send_message(chat_id=b["user_id"], text=msg)
             except Exception:
                 pass
+    # Закреплённые слоты на этот день недели в это время
+    target_weekday = target.weekday()
+    slots = await db.get_blocked_slots_for_day(target_weekday)
+    for slot in slots:
+        if _normalize_slot_time(slot.get("lesson_time") or "") != target_time:
+            continue
+        link = (slot.get("lesson_link") or "").strip()
+        if not link:
+            continue
+        uid = slot.get("student_user_id")
+        if not uid:
+            continue
+        student_name = (slot.get("student_name") or "").strip() or "Урок"
+        msg = f"🕐 Через минуту начало: {student_name}\n\n👉 Ссылка: {link}"
+        try:
+            await context.bot.send_message(chat_id=uid, text=msg)
+        except Exception:
+            pass
 
 
 def _format_date_header(lesson_date: str) -> str:
@@ -1777,7 +1898,11 @@ async def _build_schedule_message(context: ContextTypes.DEFAULT_TYPE):
             text += f"▫️ {title} · {lt}\n   📅 {dates_str}\n\n"
         text += f"Всего уроков: {len(lessons)}\n\n"
     else:
-        text += "Уроков пока нет.\n\n"
+        text += (
+            "Уроков пока нет.\n\n"
+            "Кнопки «🗑 Удалить» и «🔗 Ссылка» появятся у каждого урока после «Создать урок». "
+            "Ниже — закреплённые слоты; снять слот: кнопка «🔓 Снять слот».\n\n"
+        )
     if blocked:
         # Группируем по дню недели, внутри дня — по времени; между днями — разделитель
         by_day = {}
@@ -1817,6 +1942,7 @@ async def _build_schedule_message(context: ContextTypes.DEFAULT_TYPE):
         day = DAY_NAMES[b["day_of_week"]]
         keyboard.append([
             InlineKeyboardButton(f"🔓 Снять слот · {b['student_name']} ({day} {b['lesson_time']})", callback_data=f"unblock_{b['id']}"),
+            InlineKeyboardButton("🔗 Ссылка", callback_data=f"blocked_slot_link_{b['id']}"),
         ])
     keyboard.append([
         InlineKeyboardButton("🔒 Закрепить слот за учеником", callback_data="tutor_block_slot"),
@@ -1826,7 +1952,8 @@ async def _build_schedule_message(context: ContextTypes.DEFAULT_TYPE):
         InlineKeyboardButton("След. 7 дней", callback_data="tutor_schedule_clear_range"),
     ])
     keyboard.append([
-        InlineKeyboardButton("🗑 Очистить всё расписание", callback_data="tutor_clear_schedule"),
+        InlineKeyboardButton("🗑 Удалить все уроки", callback_data="tutor_clear_lessons_only"),
+        InlineKeyboardButton("🗑 Очистить всё (и слоты)", callback_data="tutor_clear_schedule"),
     ])
     keyboard.extend(KEYBOARD_BACK_TO_MAIN)
     return text, InlineKeyboardMarkup(keyboard)
@@ -1978,6 +2105,27 @@ async def block_slot_receive(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("Напиши да или нет.")
         return True
     return False
+
+
+async def blocked_slot_link_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Обработка ввода ссылки для закреплённого слота."""
+    data = context.user_data.get("blocked_slot_link_input")
+    if not data:
+        return False
+    text = (update.message.text or "").strip()
+    slot_id = data.get("slot_id")
+    context.user_data.pop("blocked_slot_link_input", None)
+    if text == "-":
+        await db.update_blocked_slot_link(slot_id, "")
+        await update.message.reply_text("✅ Ссылка у слота убрана.")
+    else:
+        if not text or len(text) < 5:
+            await update.message.reply_text("Пришли полную ссылку (https://...) или минус (-) чтобы убрать.")
+            context.user_data["blocked_slot_link_input"] = data
+            return True
+        await db.update_blocked_slot_link(slot_id, text)
+        await update.message.reply_text("✅ Ссылка сохранена. За минуту до времени слота бот отправит её ученику.")
+    return True
 
 
 async def lesson_link_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:

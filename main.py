@@ -88,6 +88,9 @@ def main() -> None:
         if context.user_data.get("block_slot"):
             if await h.block_slot_receive(update, context):
                 return
+        if context.user_data.get("blocked_slot_link_input"):
+            if await h.blocked_slot_link_receive(update, context):
+                return
         if context.user_data.get("lesson_link_input"):
             if await h.lesson_link_receive(update, context):
                 return
