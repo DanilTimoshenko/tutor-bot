@@ -62,5 +62,6 @@ except ModuleNotFoundError:
         CHANNEL_ID = os.environ.get("CHANNEL_ID") or None
         SUMMARY_DAILY_HOUR = int(_h) if _h and str(_h).strip().isdigit() else None
         LESSON_LINK = (os.environ.get("LESSON_LINK") or "").strip() or None
+        EGE_AUTHOR_TG = (os.environ.get("EGE_AUTHOR_TG") or "").strip() or None
         YANDEX_API_KEY = _yandex_key
         YANDEX_FOLDER_ID = _yandex_folder

@@ -928,6 +928,42 @@ async def fill_ege_tasks_22_23_24() -> None:
     )
 
 
+# Задача 25: первые 5 чисел > 2_900_000 — произведение двух различных простых, в каждом ровно один 0
+TASK_25_CODE = '''def prime(x):
+    for i in range(2, int(x**0.5) + 1):
+        if x % i == 0:
+            return False
+    return x > 1
+
+k = 0
+for x in range(2_900_000, 5_000_000):
+    d = set()
+    for i in range(2, int(x**0.5) + 1):
+        if x % i == 0:
+            d.add(i)
+            d.add(x // i)
+    b = list(d)
+    if len(d) == 2 and str(b[0]).count('0') == 1 and str(b[1]).count('0') == 1 and b[0] * b[1] == x and prime(b[0]) and prime(b[1]):
+        print(x, max(b))
+        k += 1
+        if k == 5:
+            break
+'''
+
+TASK_25_EXPLANATION = """Определите первые 5 чисел, больших 2 900 000, которые являются произведением двух различных простых чисел, каждое из которых содержит в себе ровно один 0. В ответе в первом столбце таблицы запишите найденные числа в порядке возрастания, а во втором — соответствующие им максимальные множители."""
+
+
+async def fill_ege_tasks_25() -> None:
+    """Задание 25 — произведение двух простых с ровно одним нулём в каждом."""
+    await db.set_ege_task(
+        task_number=25,
+        title="Задача 25 — произведение двух простых (в каждом ровно один 0)",
+        example_solution=TASK_25_CODE,
+        explanation=TASK_25_EXPLANATION,
+        source_url="",
+    )
+
+
 # 26.1: два скрина решения (таблицы + формула размера; столбец D цвет, E — кол-во коробок)
 TASK_26_1_SOLUTION_IMAGES = "ege_images/26_1_solution_1.png|ege_images/26_1_solution_2.png"
 
@@ -1010,6 +1046,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1022,6 +1059,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1035,6 +1073,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1047,6 +1086,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1060,6 +1100,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1072,6 +1113,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1085,6 +1127,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1097,6 +1140,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1110,6 +1154,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1132,6 +1177,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1144,6 +1190,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1157,6 +1204,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1169,6 +1217,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1182,6 +1231,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1194,6 +1244,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1207,6 +1258,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1219,6 +1271,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1232,6 +1285,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1245,6 +1299,7 @@ async def ensure_ege_tasks_1_6() -> None:
                     await fill_ege_tasks_15_16_17()
                     await fill_ege_tasks_18_19_20_21()
                     await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1258,6 +1313,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1270,6 +1326,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1283,6 +1340,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1297,6 +1355,7 @@ async def ensure_ege_tasks_1_6() -> None:
                 await fill_ege_tasks_15_16_17()
                 await fill_ege_tasks_18_19_20_21()
                 await fill_ege_tasks_22_23_24()
+                await fill_ege_tasks_25()
                 await fill_ege_tasks_26()
                 await fill_ege_tasks_27()
                 return
@@ -1312,6 +1371,7 @@ async def main() -> None:
     await fill_ege_tasks_15_16_17()
     await fill_ege_tasks_18_19_20_21()
     await fill_ege_tasks_22_23_24()
+    await fill_ege_tasks_25()
     await fill_ege_tasks_26()
     await fill_ege_tasks_27()
     for num in range(1, 28):

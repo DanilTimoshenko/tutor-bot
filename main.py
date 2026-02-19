@@ -63,6 +63,7 @@ def main() -> None:
     app.bot_data["yandex_folder_id"] = _yandex_folder
     app.bot_data["openai_api_key"] = _yandex_key and _yandex_folder
     app.bot_data["lesson_link"] = (getattr(config, "LESSON_LINK", None) or "").strip() or None
+    app.bot_data["ege_author_tg"] = (getattr(config, "EGE_AUTHOR_TG", None) or "").strip() or None
 
     app.add_handler(CommandHandler("start", h.start))
     app.add_handler(CommandHandler("help", h.help_cmd))

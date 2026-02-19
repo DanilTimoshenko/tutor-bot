@@ -165,26 +165,25 @@ def _build_main_menu_content(
         keyboard.append([InlineKeyboardButton("📚 Раздел ЕГЭ", callback_data="student_ege")])
         return text, keyboard
 
-    # Режим репетитора (в т.ч. для админа в режиме «репетитор») — без кнопки «Добавить репетитора»
+    # Режим репетитора или админа
     if is_tutor(user_id, bot_data):
         mode = user_data.get("admin_mode") if (user_data and is_admin(user_id, bot_data)) else None
-        if mode == "admin" or (is_admin(user_id, bot_data) and mode != "tutor"):
+        if mode == "admin":
+            # Режим админа: только управление репетиторами и скачать БД
             text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👑 Режим администратора"
+            keyboard = [
+                [InlineKeyboardButton("➕ Добавить репетитора", callback_data="admin_add_tutor")],
+                [InlineKeyboardButton("📥 Скачать БД", callback_data="admin_download_db")],
+            ]
         else:
+            # Режим репетитора: уроки, расписание, сводка, заявки (без «как очистить чат», без «как видят», без «скачать БД»)
             text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👩‍🏫 Режим репетитора"
-        keyboard = [
-            [InlineKeyboardButton("✏️ Создать урок", callback_data="tutor_add_lesson")],
-            [InlineKeyboardButton("📅 Расписание", callback_data="tutor_schedule")],
-            [InlineKeyboardButton("📊 Сводка на сегодня", callback_data="tutor_summary")],
-            [InlineKeyboardButton("📬 Заявки на время", callback_data="tutor_freetime_requests")],
-            [InlineKeyboardButton("💬 Как очистить чат", callback_data="tutor_clear_chat_help")],
-        ]
-        # Кнопка «Как видят ученики» и «Скачать БД» — только у админа
-        if is_admin(user_id, bot_data):
-            keyboard.insert(5, [InlineKeyboardButton("👀 Как видят ученики", callback_data="tutor_preview_student")])
-            keyboard.append([InlineKeyboardButton("📥 Скачать БД", callback_data="admin_download_db")])
-        if is_admin(user_id, bot_data) and (mode == "admin" or mode is None):
-            keyboard.append([InlineKeyboardButton("➕ Добавить репетитора", callback_data="admin_add_tutor")])
+            keyboard = [
+                [InlineKeyboardButton("✏️ Создать урок", callback_data="tutor_add_lesson")],
+                [InlineKeyboardButton("📅 Расписание", callback_data="tutor_schedule")],
+                [InlineKeyboardButton("📊 Сводка на сегодня", callback_data="tutor_summary")],
+                [InlineKeyboardButton("📬 Заявки на время", callback_data="tutor_freetime_requests")],
+            ]
     else:
         keyboard = [
             [InlineKeyboardButton("📅 Записаться на урок", callback_data="student_lessons")],
@@ -584,10 +583,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
 
         elif data == "student_ege":
+            ege_author = (context.bot_data.get("ege_author_tg") or "").strip()
+            author_line = f"\n\nАвтор разборов: {ege_author}" if ege_author else ""
             text = (
                 "📚 Раздел ЕГЭ по информатике\n\n"
-                "Выбери номер задания (1–27). Откроется пример решения и краткое объяснение.\n\n"
-                "Источник материалов: code-enjoy.ru"
+                "Выбери номер задания (1–27). Откроется пример решения и краткое объяснение."
+                + author_line
             )
             keyboard = []
             for row_start in range(1, 28, 3):
@@ -749,10 +750,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 or (task.get("example_solution") or "").strip()
             )
             if not has_any:
+                ege_author = (context.bot_data.get("ege_author_tg") or "").strip()
+                author_line = f"\n\nАвтор разборов: {ege_author}" if ege_author else ""
                 msg = (
                     f"📚 Задание {num}\n\n"
-                    "Контент пока не добавлен. Разбор заданий можно посмотреть на сайте:\n"
-                    "https://code-enjoy.ru/courses/kurs_ege_po_informatike/"
+                    "Контент пока не добавлен."
+                    + author_line
                 )
                 keyboard = [
                     [InlineKeyboardButton("📚 К списку заданий", callback_data="student_ege")],
