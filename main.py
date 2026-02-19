@@ -89,6 +89,9 @@ def main() -> None:
         if context.user_data.get("block_slot"):
             if await h.block_slot_receive(update, context):
                 return
+        if context.user_data.get("add_tutor_input"):
+            if await h.add_tutor_receive(update, context):
+                return
         if context.user_data.get("blocked_slot_link_input"):
             if await h.blocked_slot_link_receive(update, context):
                 return
@@ -129,6 +132,9 @@ def main() -> None:
 
     async def post_init(application):
         await db.init_db()
+        # Репетиторы из конфига + добавленные админом через бота
+        extra_tutors = await db.get_tutor_user_ids_from_db()
+        application.bot_data["tutor_user_ids"] = application.bot_data["tutor_user_ids"] | extra_tutors
         try:
             from set_ege_images_1_6 import ensure_ege_tasks_1_6
             await ensure_ege_tasks_1_6()

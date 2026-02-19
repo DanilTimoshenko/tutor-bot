@@ -40,6 +40,8 @@ summary_cmd = tutor.summary_cmd
 daily_summary_callback = tutor.daily_summary_callback
 send_lesson_links_callback = tutor.send_lesson_links_callback
 
+add_tutor_receive = admin.add_tutor_receive
+
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query

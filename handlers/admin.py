@@ -11,12 +11,55 @@ import database as db
 from .common import (
     KEYBOARD_BACK_TO_MAIN,
     _build_main_menu_content,
+    _clear_other_flows,
     is_admin,
     is_tutor,
     MSG_ONLY_TUTOR,
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def add_tutor_receive(update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Обработка ввода Telegram ID нового репетитора (админ). Возвращает True если обработано."""
+    if not context.user_data.get("add_tutor_input"):
+        return False
+    user_id = update.effective_user.id
+    if not is_admin(user_id, context.bot_data):
+        context.user_data.pop("add_tutor_input", None)
+        return True
+    text = (update.message.text or "").strip()
+    if text.lower() in ("отмена", "отменить", "cancel"):
+        context.user_data.pop("add_tutor_input", None)
+        await update.message.reply_text(
+            "Добавление репетитора отменено.",
+            reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
+        )
+        return True
+    try:
+        new_id = int(text)
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Введите число (Telegram ID). Узнать ID можно у @userinfobot. Или напишите «отмена»."
+        )
+        return True
+    if new_id <= 0:
+        await update.message.reply_text("❌ ID должен быть положительным числом.")
+        return True
+    ok = await db.add_tutor_user_id(new_id)
+    context.user_data.pop("add_tutor_input", None)
+    if ok:
+        context.bot_data.setdefault("tutor_user_ids", set()).add(new_id)
+        await update.message.reply_text(
+            f"✅ Готово. Пользователь с ID {new_id} теперь репетитор — при /start увидит меню репетитора.",
+            reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
+        )
+    else:
+        await update.message.reply_text(
+            "Репетитор с таким ID уже был добавлен ранее.",
+            reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
+        )
+    return True
 
 
 async def handle_callback(query, context: ContextTypes.DEFAULT_TYPE, data: str, user_id: int) -> bool:
@@ -54,12 +97,13 @@ async def handle_callback(query, context: ContextTypes.DEFAULT_TYPE, data: str, 
         if not is_admin(user_id, context.bot_data):
             await query.edit_message_text(MSG_ONLY_TUTOR)
             return True
+        _clear_other_flows(context, "add_tutor_input")
+        context.user_data["add_tutor_input"] = True
         await query.edit_message_text(
             "➕ Добавить репетитора\n\n"
-            "Репетиторов задают в настройках (Railway Variables или config.py).\n\n"
-            "Переменная TUTOR_USER_IDS — перечисли ID через запятую, например: 2071587097,123456789\n"
-            "После изменения сделай Redeploy.",
-            reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
+            "Введите Telegram ID нового репетитора (число).\n"
+            "Узнать ID: пусть человек напишет боту @userinfobot — тот пришлёт ID.\n\n"
+            "Напишите «отмена», чтобы выйти.",
         )
         return True
     if data == "admin_download_db":

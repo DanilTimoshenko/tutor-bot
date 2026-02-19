@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 FLOW_KEYS = (
     "add_lesson", "block_slot", "request_slot", "schedule_range_input",
     "homework_help", "lesson_link_input", "blocked_slot_link_input",
+    "add_tutor_input",
 )
 KEYBOARD_BACK_TO_MAIN = [[InlineKeyboardButton("🏠 Вернуться на главную", callback_data="main_menu")]]
 

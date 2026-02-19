@@ -260,6 +260,10 @@ async def blocked_slot_link_receive(update: Update, context: ContextTypes.DEFAUL
             return True
         await db.update_blocked_slot_link(slot_id, text)
         await update.message.reply_text("✅ Ссылка сохранена. За минуту до времени слота бот отправит её ученику.")
+    text, reply_markup = await _build_schedule_message(context)
+    if len(text) > SCHEDULE_TEXT_MAX:
+        text = text[:SCHEDULE_TEXT_MAX] + "\n\n…"
+    await update.message.reply_text(text, reply_markup=reply_markup)
     return True
 
 
@@ -280,6 +284,10 @@ async def lesson_link_receive(update: Update, context: ContextTypes.DEFAULT_TYPE
             return True
         await db.update_lesson_link(lesson_id, text)
         await update.message.reply_text("✅ Ссылка сохранена. За минуту до урока бот отправит её записанным.")
+    text, reply_markup = await _build_schedule_message(context)
+    if len(text) > SCHEDULE_TEXT_MAX:
+        text = text[:SCHEDULE_TEXT_MAX] + "\n\n…"
+    await update.message.reply_text(text, reply_markup=reply_markup)
     return True
 
 

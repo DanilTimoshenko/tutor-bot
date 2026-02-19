@@ -113,6 +113,12 @@ async def init_db():
                 await db.execute(f"ALTER TABLE ege_tasks ADD COLUMN {col} TEXT DEFAULT ''")
             except Exception:
                 pass
+        # Репетиторы, добавленные админом через бота (объединяются с TUTOR_USER_IDS из конфига)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS tutor_user_ids (
+                user_id INTEGER PRIMARY KEY
+            )
+        """)
         # Заявки учеников на свободное время (раздел для репетитора)
         await db.execute("""
             CREATE TABLE IF NOT EXISTS free_time_requests (
@@ -126,6 +132,36 @@ async def init_db():
             )
         """)
         await db.commit()
+
+
+async def get_tutor_user_ids_from_db() -> set:
+    """ID репетиторов, добавленных через бота (админ)."""
+    result = set()
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cursor = await conn.execute("SELECT user_id FROM tutor_user_ids")
+        rows = await cursor.fetchall()
+        for (uid,) in rows:
+            result.add(uid)
+    return result
+
+
+async def add_tutor_user_id(user_id: int) -> bool:
+    """Добавить репетитора по ID (из админ-меню бота). Возвращает True если добавлен."""
+    async with aiosqlite.connect(DB_PATH) as conn:
+        try:
+            await conn.execute("INSERT OR IGNORE INTO tutor_user_ids (user_id) VALUES (?)", (user_id,))
+            await conn.commit()
+            return True
+        except Exception:
+            return False
+
+
+async def remove_tutor_user_id(user_id: int) -> bool:
+    """Убрать репетитора из списка (добавленного через бота)."""
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cursor = await conn.execute("DELETE FROM tutor_user_ids WHERE user_id = ?", (user_id,))
+        await conn.commit()
+        return cursor.rowcount > 0
 
 
 async def add_lesson(

@@ -31,3 +31,6 @@ LESSON_LINK = None
 # Каталог и API-ключ: Yandex Cloud → AI Foundation Models → подключаешь YandexGPT → смотри folder_id и создаёшь API-ключ.
 YANDEX_API_KEY = None
 YANDEX_FOLDER_ID = None
+
+# Тег в Telegram для раздела ЕГЭ (показывается вместо ссылки на источник). Например: "@YourNick"
+EGE_AUTHOR_TG = None
