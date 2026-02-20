@@ -213,8 +213,9 @@ async def get_lessons_at(lesson_date: str, lesson_time: str):
 
 
 async def get_upcoming_lessons(limit: int = 50):
-    """Список предстоящих уроков (дата >= сегодня), отсортированных по дате и времени."""
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    """Список предстоящих уроков (дата >= сегодня), отсортированных по дате и времени.
+    Используется локальная дата сервера, чтобы ученики видели уроки по календарному дню."""
+    today = datetime.now().strftime("%Y-%m-%d")
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
