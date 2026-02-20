@@ -94,6 +94,44 @@ async def lessons_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             pass
 
 
+async def booking_username_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Обрабатывает ввод @username при записи на урок (если у пользователя нет username в Telegram)."""
+    data = context.user_data.get("booking_username_input")
+    if not data:
+        return False
+    text = (update.message.text or "").strip()
+    if text.lower() in ("отмена", "отменить", "cancel"):
+        context.user_data.pop("booking_username_input", None)
+        await update.message.reply_text("Запись отменена.", reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN))
+        return True
+    username = text.strip().lstrip("@")
+    if not username or len(username) < 2:
+        await update.message.reply_text(
+            "Укажите ваш @username в Telegram (например @ivanov) или напишите «отмена».",
+        )
+        return True
+    lesson_id = data["lesson_id"]
+    context.user_data.pop("booking_username_input", None)
+    user_id = update.effective_user.id
+    first_name = update.effective_user.first_name
+    ok, msg = await db.book_lesson(lesson_id, user_id, username=username, first_name=first_name)
+    await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN))
+    if ok:
+        await db.update_blocked_slots_user_id(username, user_id)
+        lesson = await db.get_lesson(lesson_id)
+        tutor_id = context.bot_data.get("tutor_user_id")
+        tutor_ids = context.bot_data.get("tutor_user_ids") or {tutor_id} if tutor_id else set()
+        if lesson and tutor_ids:
+            student_name = first_name or username or f"ID{user_id}"
+            notify = f"🔔 Новая запись на урок\n\n👤 {student_name} @{username}\n\n▫️ {lesson['title']}\n📅 {lesson['lesson_date']}  ·  🕐 {lesson['lesson_time']}"
+            for tid in tutor_ids:
+                try:
+                    await context.bot.send_message(chat_id=tid, text=notify)
+                except Exception:
+                    pass
+    return True
+
+
 async def my_bookings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     username = (update.effective_user.username or "").strip()
@@ -266,26 +304,37 @@ async def handle_callback(query, context: ContextTypes.DEFAULT_TYPE, data: str, 
 
     if data.startswith("book_"):
         lesson_id = int(data.split("_")[1])
+        username = (query.from_user.username or "").strip()
+        if not username:
+            _clear_other_flows(context, "booking_username_input")
+            context.user_data["booking_username_input"] = {"lesson_id": lesson_id}
+            await query.edit_message_text(
+                "✏️ Укажите ваш @username в Telegram (например @ivanov).\n\nНапишите «отмена», чтобы отменить запись.",
+                reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
+            )
+            return True
         ok, msg = await db.book_lesson(
             lesson_id, user_id,
-            username=query.from_user.username,
+            username=username,
             first_name=query.from_user.first_name,
         )
         await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN))
-        if ok and query.from_user.username:
-            await db.update_blocked_slots_user_id(query.from_user.username, user_id)
+        if ok and username:
+            await db.update_blocked_slots_user_id(username, user_id)
         if ok:
             lesson = await db.get_lesson(lesson_id)
             if lesson:
-                student_name = query.from_user.first_name or query.from_user.username or f"ID{user_id}"
+                student_name = query.from_user.first_name or username or f"ID{user_id}"
                 notify = f"🔔 Новая запись на урок\n\n👤 {student_name}"
-                if query.from_user.username:
-                    notify += f" @{query.from_user.username}"
+                if username:
+                    notify += f" @{username}"
                 notify += f"\n\n▫️ {lesson['title']}\n📅 {lesson['lesson_date']}  ·  🕐 {lesson['lesson_time']}"
-                try:
-                    await context.bot.send_message(chat_id=tutor_id, text=notify)
-                except Exception:
-                    pass
+                tutor_ids = context.bot_data.get("tutor_user_ids") or {tutor_id}
+                for tid in tutor_ids:
+                    try:
+                        await context.bot.send_message(chat_id=tid, text=notify)
+                    except Exception:
+                        pass
         return True
 
     if data.startswith("student_unblock_"):
@@ -313,8 +362,21 @@ async def handle_callback(query, context: ContextTypes.DEFAULT_TYPE, data: str, 
 
     if data.startswith("cancel_"):
         lesson_id = int(data.split("_")[1])
+        lesson = await db.get_lesson(lesson_id)
         ok, msg = await db.cancel_booking(lesson_id, user_id)
         await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN))
+        if ok and lesson:
+            student_name = query.from_user.first_name or query.from_user.username or f"ID{user_id}"
+            notify = f"❌ Отмена записи\n\n👤 {student_name}"
+            if query.from_user.username:
+                notify += f" @{query.from_user.username}"
+            notify += f" отменил(а) запись на урок\n\n▫️ {lesson.get('title', 'Урок')}\n📅 {lesson.get('lesson_date', '')}  ·  🕐 {lesson.get('lesson_time', '')}"
+            tutor_ids = context.bot_data.get("tutor_user_ids") or {tutor_id}
+            for tid in tutor_ids:
+                try:
+                    await context.bot.send_message(chat_id=tid, text=notify)
+                except Exception:
+                    pass
         return True
 
     return False

@@ -27,6 +27,7 @@ lessons_list = student.lessons_list
 my_bookings = student.my_bookings
 homework_receive = student.homework_receive
 request_slot_receive = student.request_slot_receive
+booking_username_receive = student.booking_username_receive
 
 schedule_tutor = schedule.schedule_tutor
 schedule_range_receive = schedule.schedule_range_receive

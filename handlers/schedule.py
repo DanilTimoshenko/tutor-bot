@@ -31,6 +31,19 @@ logger = logging.getLogger(__name__)
 # Корень проекта (handlers/schedule.py -> parent.parent)
 _ROOT = Path(__file__).resolve().parent.parent
 
+# Месяца в родительном падеже для приглашений («23 февраля в 14:30»)
+_MONTH_GENITIVE = ("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря")
+
+
+def _format_invite_date_time(lesson_date: str, lesson_time: str) -> str:
+    """Форматирует дату и время для текста приглашения: «23 февраля в 14:30»."""
+    try:
+        d = datetime.strptime(lesson_date, "%Y-%m-%d").date()
+        t = (lesson_time or "").strip()[:5]  # HH:MM
+        return f"{d.day} {_MONTH_GENITIVE[d.month - 1]} в {t or '—'}"
+    except Exception:
+        return f"{lesson_date} {lesson_time}"
+
 
 def _format_date_header(lesson_date: str) -> str:
     d = datetime.strptime(lesson_date, "%Y-%m-%d").date()
@@ -60,7 +73,7 @@ async def _build_schedule_message(context: ContextTypes.DEFAULT_TYPE):
     else:
         text += "\n\n"
     if lessons:
-        text += "У каждого урока: 👥 Кто записан, 🗑 Удалить, 🔗 Ссылка.\n\n"
+        text += "У каждого урока: 👥 Кто записан, 🗑 Удалить, 🔗 Ссылка, 📤 Приглашение.\n\n"
         by_key = {}
         for l in lessons:
             key = (l["title"], (l.get("lesson_time") or "").strip())
@@ -99,6 +112,7 @@ async def _build_schedule_message(context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton(f"👥 {date_short} {l.get('lesson_time', '')}", callback_data=f"tutor_bookings_{l['id']}"),
             InlineKeyboardButton("🗑 Удалить", callback_data=f"tutor_del_{l['id']}"),
             InlineKeyboardButton("🔗 Ссылка", callback_data=f"tutor_lesson_link_{l['id']}"),
+            InlineKeyboardButton("📤 Приглашение", callback_data=f"tutor_send_invite_{l['id']}"),
         ])
     if len(lessons) > SCHEDULE_LESSONS_BUTTONS:
         keyboard.append([InlineKeyboardButton("… ещё уроков — задайте период", callback_data="tutor_schedule_set_range")])
@@ -293,7 +307,7 @@ async def lesson_link_receive(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def handle_callback(query, context: ContextTypes.DEFAULT_TYPE, data: str, user_id: int) -> bool:
     """Обрабатывает коллбэки расписания. Возвращает True если обработано."""
-    if not data.startswith(("tutor_schedule", "tutor_clear", "tutor_block", "tutor_lesson_link", "unblock_", "blocked_slot_link_", "tutor_bookings_", "tutor_del_")):
+    if not data.startswith(("tutor_schedule", "tutor_clear", "tutor_block", "tutor_lesson_link", "tutor_send_invite_", "unblock_", "blocked_slot_link_", "tutor_bookings_", "tutor_del_")):
         if data != "tutor_clear_chat_help":
             return False
     if data == "tutor_schedule":
@@ -346,6 +360,47 @@ async def handle_callback(query, context: ContextTypes.DEFAULT_TYPE, data: str, 
         if current:
             prompt += f"\n\nСейчас: {current[:60]}{'…' if len(current) > 60 else ''}"
         await query.edit_message_text(prompt)
+        return True
+    if data.startswith("tutor_send_invite_"):
+        if not is_tutor(user_id, context.bot_data):
+            await query.edit_message_text(MSG_ONLY_TUTOR)
+            return True
+        lesson_id = int(data.replace("tutor_send_invite_", ""))
+        lesson = await db.get_lesson(lesson_id)
+        if not lesson:
+            await query.answer("Урок не найден.")
+            return True
+        global_link = (context.bot_data.get("lesson_link") or "").strip()
+        link = (lesson.get("lesson_link") or "").strip() or global_link
+        if not link:
+            await query.answer("Сначала укажите ссылку на урок (кнопка 🔗 Ссылка).")
+            return True
+        bookings = await db.get_bookings_for_lesson(lesson_id)
+        if not bookings:
+            await query.answer("На этот урок никто не записан.")
+            return True
+        tutor_name = context.bot_data.get("tutor_display_name") or "Репетитор"
+        title = lesson.get("title") or "Урок"
+        date_time_str = _format_invite_date_time(lesson.get("lesson_date") or "", lesson.get("lesson_time") or "")
+        msg = f"{tutor_name} приглашает вас на занятие\n\n«{title}» {date_time_str}\n\nСсылка на занятие: {link}"
+        sent = 0
+        for b in bookings:
+            uid = b.get("user_id")
+            if not uid:
+                continue
+            try:
+                await context.bot.send_message(chat_id=uid, text=msg)
+                sent += 1
+            except Exception as e:
+                logger.warning("send_invite to %s failed: %s", uid, e)
+        await query.answer(f"Приглашение отправлено {sent} из {len(bookings)} записанным.")
+        text, reply_markup = await _build_schedule_message(context)
+        if len(text) > SCHEDULE_TEXT_MAX:
+            text = text[:SCHEDULE_TEXT_MAX] + "\n\n…"
+        try:
+            await query.edit_message_text(text, reply_markup=reply_markup)
+        except Exception:
+            pass
         return True
     if data == "tutor_clear_lessons_only":
         if not is_tutor(user_id, context.bot_data):

@@ -15,6 +15,9 @@ TUTOR_USER_IDS = None  # если None — считаем репетиторам
 # Название в приветствии (например "Timoshenko's Atelier"). Можно None
 BOT_TITLE = None
 
+# Имя репетитора в рассылке приглашений («Имя приглашает вас на занятие …»). None — «Репетитор»
+TUTOR_DISPLAY_NAME = None
+
 # Ссылка на канал с материалами для учеников. Команда /materials отправит её.
 MATERIALS_CHANNEL_LINK = None
 

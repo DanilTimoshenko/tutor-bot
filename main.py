@@ -64,6 +64,7 @@ def main() -> None:
     app.bot_data["openai_api_key"] = _yandex_key and _yandex_folder
     app.bot_data["lesson_link"] = (getattr(config, "LESSON_LINK", None) or "").strip() or None
     app.bot_data["ege_author_tg"] = (getattr(config, "EGE_AUTHOR_TG", None) or "").strip() or None
+    app.bot_data["tutor_display_name"] = (getattr(config, "TUTOR_DISPLAY_NAME", None) or "").strip() or "Репетитор"
 
     app.add_handler(CommandHandler("start", h.start))
     app.add_handler(CommandHandler("help", h.help_cmd))
@@ -79,6 +80,9 @@ def main() -> None:
     async def text_handler(update, context):
         if context.user_data.get("homework_help"):
             if await h.homework_receive(update, context):
+                return
+        if context.user_data.get("booking_username_input"):
+            if await h.booking_username_receive(update, context):
                 return
         if context.user_data.get("request_slot"):
             if await h.request_slot_receive(update, context):
