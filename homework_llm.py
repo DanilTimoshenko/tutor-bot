@@ -10,6 +10,9 @@ logger = logging.getLogger(__name__)
 YANDEX_COMPLETION_URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
 YANDEX_VISION_URL = "https://vision.api.cloud.yandex.net/vision/v1/batchAnalyze"
 
+# Специальное значение, когда пользователь отправил только фото и OCR не смог распознать текст
+OCR_FAILED = "__OCR_FAILED__"
+
 SYSTEM_PROMPT = (
     "Ты помощник по учёбе для школьников и студентов. "
     "Отвечай на вопросы по домашним заданиям понятно и по-русски. "
@@ -53,7 +56,14 @@ async def _ocr_image(image_bytes: bytes, api_key: str) -> str | None:
                 timeout=aiohttp.ClientTimeout(total=30),
             ) as resp:
                 if resp.status != 200:
-                    logger.warning("Yandex Vision OCR: status=%s", resp.status)
+                    body = await resp.text()
+                    preview = (body[:500] + "...") if len(body) > 500 else body
+                    logger.warning(
+                        "Yandex Vision OCR: status=%s, body=%s. "
+                        "Проверь API-ключ и роль ai.vision.user у сервисного аккаунта.",
+                        resp.status,
+                        preview,
+                    )
                     return None
                 data = await resp.json()
     except Exception as e:
@@ -61,21 +71,39 @@ async def _ocr_image(image_bytes: bytes, api_key: str) -> str | None:
         return None
     try:
         results = data.get("results", [])
-        if not results or not results[0].get("results"):
+        if not results:
+            logger.warning("Yandex Vision: пустой results, ключи ответа: %s", list(data.keys()))
             return None
-        inner = results[0]["results"][0]
-        text_det = inner.get("textDetection", {})
-        pages = text_det.get("pages", [])
+        first = results[0]
+        inner_results = first.get("results")
+        if not inner_results:
+            logger.warning(
+                "Yandex Vision: нет results[0].results, ключи results[0]: %s",
+                list(first.keys()) if isinstance(first, dict) else type(first),
+            )
+            return None
+        inner = inner_results[0]
+        text_det = inner.get("textDetection") or {}
+        pages = text_det.get("pages") or []
         lines = []
         for page in pages:
-            for block in page.get("blocks", []):
-                for line in block.get("lines", []):
-                    words = [w.get("text", "") for w in line.get("words", [])]
+            for block in page.get("blocks") or []:
+                for line in block.get("lines") or []:
+                    words = [w.get("text", "") for w in (line.get("words") or [])]
                     if words:
                         lines.append(" ".join(words))
-        return "\n".join(lines).strip() if lines else None
+        out = "\n".join(lines).strip() if lines else None
+        if out:
+            logger.info("Yandex Vision OCR: распознано %s символов", len(out))
+        else:
+            logger.warning("Yandex Vision: текст не извлечён (pages=%s)", len(pages))
+        return out
     except (KeyError, IndexError, TypeError) as e:
-        logger.warning("Yandex Vision: неожиданная структура ответа: %s", e)
+        logger.warning(
+            "Yandex Vision: неожиданная структура ответа: %s. results[0].keys=%s",
+            e,
+            list(results[0].keys()) if results and isinstance(results[0], dict) else None,
+        )
         return None
 
 
@@ -98,7 +126,8 @@ async def ask_homework(user_text: str, api_key: str, folder_id: str = "", image_
         elif user_text.strip():
             user_text = user_text.strip()
         else:
-            return None
+            # Только фото, OCR не вернул текст — репетитор увидит причину в логах
+            return OCR_FAILED
     if len(user_text.strip()) < 2:
         return None
     model_uri = f"gpt://{folder_id}/yandexgpt/latest"

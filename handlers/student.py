@@ -172,7 +172,11 @@ async def homework_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text("Произошла ошибка при запросе. Попробуй ещё раз или /start.")
         await update.message.reply_text("💬 Задай следующий вопрос или /start — вернуться в меню.")
         return True
-    if reply:
+    if reply == homework_llm.OCR_FAILED:
+        await update.message.reply_text(
+            "Не удалось распознать текст на фото. Напиши задание текстом или пришли более чёткое фото."
+        )
+    elif reply:
         reply = _latex_to_plain(reply)
         if len(reply) > 4000:
             reply = reply[:3990] + "\n\n… (ответ обрезан)"
