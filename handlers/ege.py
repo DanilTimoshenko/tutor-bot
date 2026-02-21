@@ -46,7 +46,7 @@ async def handle_callback(query, context, data: str, user_id: int) -> bool:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
         return True
 
-    # Задание по конкретному номеру (1–19)
+    # Задание по конкретному номеру (1–19): из банка случайный вариант этого номера
     if data.startswith("ege_math_task_"):
         try:
             num = int(data.replace("ege_math_task_", ""))
@@ -62,8 +62,9 @@ async def handle_callback(query, context, data: str, user_id: int) -> bool:
         task_text = (task.get("task_text") or "").strip()
         if len(task_text) > 4000:
             task_text = task_text[:3990] + "\n\n… (текст обрезан)"
+        bank_id = task.get("id")
         keyboard = [
-            [InlineKeyboardButton("✅ Показать решение", callback_data=f"ege_math_show_{num}")],
+            [InlineKeyboardButton("✅ Показать решение", callback_data=f"ege_math_show_{bank_id}")],
             [InlineKeyboardButton("🎲 Случайное задание", callback_data="ege_math_random")],
             [InlineKeyboardButton("📐 К математике", callback_data="ege_math")],
         ]
@@ -74,7 +75,7 @@ async def handle_callback(query, context, data: str, user_id: int) -> bool:
         )
         return True
 
-    # Случайное задание по математике
+    # Случайное задание по математике (из всего банка)
     if data == "ege_math_random":
         task = await db.get_ege_math_random_task()
         if not task:
@@ -86,11 +87,12 @@ async def handle_callback(query, context, data: str, user_id: int) -> bool:
             )
             return True
         num = task["task_number"]
+        bank_id = task.get("id")
         task_text = (task.get("task_text") or "").strip()
         if len(task_text) > 4000:
             task_text = task_text[:3990] + "\n\n… (текст обрезан)"
         keyboard = [
-            [InlineKeyboardButton("✅ Показать решение", callback_data=f"ege_math_show_{num}")],
+            [InlineKeyboardButton("✅ Показать решение", callback_data=f"ege_math_show_{bank_id}")],
             [InlineKeyboardButton("🎲 Другое задание", callback_data="ege_math_random")],
             [InlineKeyboardButton("📐 К математике", callback_data="ege_math")],
         ]
@@ -101,19 +103,18 @@ async def handle_callback(query, context, data: str, user_id: int) -> bool:
         )
         return True
 
-    # Показать решение по математике
+    # Показать решение по математике (по id варианта в банке)
     if data.startswith("ege_math_show_"):
         try:
-            num = int(data.replace("ege_math_show_", ""))
+            bank_id = int(data.replace("ege_math_show_", ""))
         except ValueError:
-            num = 0
-        if not (1 <= num <= 19):
-            await query.answer("Некорректный номер.")
+            await query.answer("Ошибка.")
             return True
-        task = await db.get_ege_math_task(num)
+        task = await db.get_ege_math_task_by_id(bank_id)
         if not task:
             await query.answer("Задание не найдено.", show_alert=True)
             return True
+        num = task.get("task_number", 0)
         solution = (task.get("solution_text") or "").strip()
         if not solution:
             await query.answer("Решение для этого задания ещё не добавлено.", show_alert=True)

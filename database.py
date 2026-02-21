@@ -123,6 +123,31 @@ async def init_db():
                 solution_text TEXT DEFAULT ''
             )
         """)
+        # Банк вариантов ЕГЭ Математика: по номеру (1–19) может быть несколько заданий
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS ege_math_bank (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_number INTEGER NOT NULL CHECK (task_number >= 1 AND task_number <= 19),
+                task_text TEXT DEFAULT '',
+                solution_text TEXT DEFAULT ''
+            )
+        """)
+        # Один раз переносим данные из ege_math_tasks в банк, если банк пуст
+        try:
+            cur = await db.execute("SELECT COUNT(*) FROM ege_math_bank")
+            (bank_count,) = (await cur.fetchone()) or (0,)
+            if bank_count == 0:
+                cursor = await db.execute(
+                    "SELECT task_number, task_text, solution_text FROM ege_math_tasks WHERE COALESCE(TRIM(task_text), '') != ''"
+                )
+                rows = await cursor.fetchall()
+                for (tn, tt, st) in rows:
+                    await db.execute(
+                        "INSERT INTO ege_math_bank (task_number, task_text, solution_text) VALUES (?, ?, ?)",
+                        (tn, tt or "", st or ""),
+                    )
+        except Exception:
+            pass
         # Репетиторы, добавленные админом через бота (объединяются с TUTOR_USER_IDS из конфига)
         await db.execute("""
             CREATE TABLE IF NOT EXISTS tutor_user_ids (
@@ -928,16 +953,18 @@ async def get_all_ege_task_numbers() -> list[int]:
         return [r[0] for r in rows]
 
 
-# ——— ЕГЭ Математика (19 заданий: случайное задание + решение по кнопке) ———
+# ——— ЕГЭ Математика: банк вариантов (по номеру 1–19 может быть несколько заданий) ———
 
 async def get_ege_math_task(task_number: int) -> dict | None:
-    """Возвращает задание ЕГЭ Математика по номеру (1–19) или None."""
+    """Возвращает одно случайное задание из банка по номеру (1–19) или None."""
     if not (1 <= task_number <= 19):
         return None
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT task_number, task_text, solution_text FROM ege_math_tasks WHERE task_number = ?",
+            """SELECT id, task_number, task_text, solution_text FROM ege_math_bank
+               WHERE task_number = ? AND COALESCE(TRIM(task_text), '') != ''
+               ORDER BY RANDOM() LIMIT 1""",
             (task_number,),
         )
         row = await cursor.fetchone()
@@ -946,32 +973,42 @@ async def get_ege_math_task(task_number: int) -> dict | None:
         return dict(row)
 
 
+async def get_ege_math_task_by_id(bank_id: int) -> dict | None:
+    """Возвращает задание из банка по id (для показа решения конкретного варианта)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT id, task_number, task_text, solution_text FROM ege_math_bank WHERE id = ?",
+            (bank_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)
+
+
 async def set_ege_math_task(task_number: int, task_text: str = "", solution_text: str = "") -> None:
-    """Создаёт или обновляет задание ЕГЭ Математика (1–19)."""
+    """Добавляет вариант задания в банк ЕГЭ Математика (1–19)."""
     if not (1 <= task_number <= 19):
         return
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            """INSERT INTO ege_math_tasks (task_number, task_text, solution_text)
-               VALUES (?, ?, ?)
-               ON CONFLICT(task_number) DO UPDATE SET
-                 task_text = excluded.task_text,
-                 solution_text = excluded.solution_text""",
+            "INSERT INTO ege_math_bank (task_number, task_text, solution_text) VALUES (?, ?, ?)",
             (task_number, (task_text or "").strip(), (solution_text or "").strip()),
         )
         await db.commit()
 
 
 async def get_ege_math_random_task() -> dict | None:
-    """Возвращает одно случайное задание ЕГЭ Математика (1–19), у которого заполнен task_text."""
-    import random
+    """Возвращает одно случайное задание из банка (любой номер)."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT task_number, task_text, solution_text FROM ege_math_tasks WHERE COALESCE(TRIM(task_text), '') != '' ORDER BY task_number"
+            """SELECT id, task_number, task_text, solution_text FROM ege_math_bank
+               WHERE COALESCE(TRIM(task_text), '') != ''
+               ORDER BY RANDOM() LIMIT 1"""
         )
-        rows = await cursor.fetchall()
-    if not rows:
-        return None
-    row = random.choice(rows)
-    return dict(row)
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)

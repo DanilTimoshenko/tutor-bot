@@ -1,11 +1,12 @@
 """
-Заполнить задания ЕГЭ Математика 1–5 из присланных задач и решений.
+Заполнить банк ЕГЭ Математика: все 5 вариантов — для номера 1 (при нажатии «1» бот выдаёт случайное из банка).
 Запуск: python fill_ege_math_1_5.py
 """
 import asyncio
 import database as db
 
 
+# Все 5 пар «задание + решение» — варианты задания № 1 (при нажатии 1 бот выбирает любой и подтягивает решение)
 TASKS = [
     {
         "task": (
@@ -89,9 +90,9 @@ TASKS = [
 
 async def main() -> None:
     for i, data in enumerate(TASKS, start=1):
-        await db.set_ege_math_task(i, task_text=data["task"], solution_text=data["solution"])
-        print(f"Задание {i} сохранено.")
-    print("Готово: задания 1–5 добавлены в ЕГЭ Математика.")
+        await db.set_ege_math_task(1, task_text=data["task"], solution_text=data["solution"])
+        print(f"Вариант {i} задания 1 сохранён в банк.")
+    print("Готово: 5 вариантов задания 1 добавлены в банк ЕГЭ Математика.")
 
 
 if __name__ == "__main__":
