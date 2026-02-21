@@ -183,7 +183,7 @@ def _build_main_menu_content(
         ]
         if bot_data.get("openai_api_key"):
             keyboard.append([InlineKeyboardButton("AITimoshenko'sAtelie", callback_data="student_homework_help")])
-        keyboard.append([InlineKeyboardButton("📚 Раздел ЕГЭ", callback_data="student_ege")])
+        keyboard.append([InlineKeyboardButton("📚 Раздел ЕГЭ", callback_data="ege_menu")])
         keyboard.append([InlineKeyboardButton("◀️ Выйти из теста", callback_data="tutor_exit_test_student")])
         return text, keyboard
 
@@ -211,7 +211,7 @@ def _build_main_menu_content(
         ]
         if bot_data.get("openai_api_key"):
             keyboard.append([InlineKeyboardButton("AITimoshenko'sAtelie", callback_data="student_homework_help")])
-        keyboard.append([InlineKeyboardButton("📚 Раздел ЕГЭ", callback_data="student_ege")])
+        keyboard.append([InlineKeyboardButton("📚 Раздел ЕГЭ", callback_data="ege_menu")])
         return text, keyboard
 
     # Режим репетитора или админа
@@ -241,7 +241,7 @@ def _build_main_menu_content(
         ]
         if bot_data.get("openai_api_key"):
             keyboard.append([InlineKeyboardButton("AITimoshenko'sAtelie", callback_data="student_homework_help")])
-        keyboard.append([InlineKeyboardButton("📚 Раздел ЕГЭ", callback_data="student_ege")])
+        keyboard.append([InlineKeyboardButton("📚 Раздел ЕГЭ", callback_data="ege_menu")])
     return text, keyboard
 
 

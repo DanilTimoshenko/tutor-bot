@@ -153,7 +153,7 @@ async def handle_callback(query, context: ContextTypes.DEFAULT_TYPE, data: str, 
         ]
         if context.bot_data.get("openai_api_key"):
             keyboard.append([InlineKeyboardButton("AITimoshenko'sAtelie", callback_data="student_homework_help")])
-        keyboard.append([InlineKeyboardButton("📚 Раздел ЕГЭ", callback_data="student_ege")])
+        keyboard.append([InlineKeyboardButton("📚 Раздел ЕГЭ", callback_data="ege_menu")])
         await query.message.reply_text("👀 Так видят ученики:\n━━━━━━━━━━━━━━━━━━━━")
         await context.bot.send_message(
             chat_id=user_id,

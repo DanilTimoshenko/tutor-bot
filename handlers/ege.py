@@ -1,5 +1,5 @@
 """
-EGE-related callback handling: student_ege, ege_task_*, ege_show_solution_*.
+EGE-related callback handling: ege_menu, student_ege (информатика), ege_math (математика), ege_task_*, ege_show_solution_*, ege_math_*.
 """
 import logging
 from pathlib import Path
@@ -17,6 +17,92 @@ root = Path(__file__).resolve().parent.parent
 
 async def handle_callback(query, context, data: str, user_id: int) -> bool:
     """Handle EGE callbacks. Returns True when handled."""
+    # Подменю ЕГЭ: Информатика | Математика
+    if data == "ege_menu":
+        text = "📚 Раздел ЕГЭ\n\nВыбери предмет:"
+        keyboard = [
+            [InlineKeyboardButton("📘 Информатика", callback_data="student_ege")],
+            [InlineKeyboardButton("📐 Математика", callback_data="ege_math")],
+        ]
+        keyboard.extend(KEYBOARD_BACK_TO_MAIN)
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        return True
+
+    # Математика: меню с кнопкой «Случайное задание»
+    if data == "ege_math":
+        text = (
+            "📐 ЕГЭ — Математика\n\n"
+            "19 заданий. Нажми кнопку — получи случайное задание. Решение откроется по нажатию «Показать решение»."
+        )
+        keyboard = [
+            [InlineKeyboardButton("🎲 Случайное задание", callback_data="ege_math_random")],
+            [InlineKeyboardButton("📚 К разделу ЕГЭ", callback_data="ege_menu")],
+        ]
+        keyboard.extend(KEYBOARD_BACK_TO_MAIN)
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        return True
+
+    # Случайное задание по математике
+    if data == "ege_math_random":
+        task = await db.get_ege_math_random_task()
+        if not task:
+            await query.edit_message_text(
+                "Пока нет заданий по математике. Репетитор добавит их позже.",
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("📚 К разделу ЕГЭ", callback_data="ege_menu")]] + KEYBOARD_BACK_TO_MAIN
+                ),
+            )
+            return True
+        num = task["task_number"]
+        task_text = (task.get("task_text") or "").strip()
+        if len(task_text) > 4000:
+            task_text = task_text[:3990] + "\n\n… (текст обрезан)"
+        keyboard = [
+            [InlineKeyboardButton("✅ Показать решение", callback_data=f"ege_math_show_{num}")],
+            [InlineKeyboardButton("🎲 Другое задание", callback_data="ege_math_random")],
+            [InlineKeyboardButton("📐 К математике", callback_data="ege_math")],
+        ]
+        keyboard.extend(KEYBOARD_BACK_TO_MAIN)
+        await query.edit_message_text(
+            f"📐 Задание {num}\n\n{task_text}",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return True
+
+    # Показать решение по математике
+    if data.startswith("ege_math_show_"):
+        try:
+            num = int(data.replace("ege_math_show_", ""))
+        except ValueError:
+            num = 0
+        if not (1 <= num <= 19):
+            await query.answer("Некорректный номер.")
+            return True
+        task = await db.get_ege_math_task(num)
+        if not task:
+            await query.answer("Задание не найдено.", show_alert=True)
+            return True
+        solution = (task.get("solution_text") or "").strip()
+        if not solution:
+            await query.answer("Решение для этого задания ещё не добавлено.", show_alert=True)
+            return True
+        if len(solution) > 4000:
+            solution = solution[:3990] + "\n\n… (обрезано)"
+        body, parse_mode = _format_homework_reply_for_telegram(f"✅ Решение. Задание {num}\n\n{solution}")
+        keyboard = [
+            [InlineKeyboardButton("🎲 Другое задание", callback_data="ege_math_random")],
+            [InlineKeyboardButton("📐 К математике", callback_data="ege_math")],
+        ]
+        keyboard.extend(KEYBOARD_BACK_TO_MAIN)
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=body,
+            parse_mode=parse_mode,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        await query.answer("Решение отправлено.")
+        return True
+
     if data == "student_ege":
         ege_author = (context.bot_data.get("ege_author_tg") or "").strip()
         author_line = f"\n\nАвтор разборов: {ege_author}" if ege_author else ""
@@ -33,6 +119,7 @@ async def handle_callback(query, context, data: str, user_id: int) -> bool:
                 InlineKeyboardButton(f"{row_start + 2}", callback_data=f"ege_task_{row_start + 2}"),
             ]
             keyboard.append(row)
+        keyboard.append([InlineKeyboardButton("📚 К разделу ЕГЭ", callback_data="ege_menu")])
         keyboard.extend(KEYBOARD_BACK_TO_MAIN)
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
         return True
