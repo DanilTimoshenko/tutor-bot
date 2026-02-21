@@ -67,6 +67,8 @@ except ModuleNotFoundError:
         EGE_AUTHOR_TG = (os.environ.get("EGE_AUTHOR_TG") or "").strip() or None
         TUTOR_DISPLAY_NAME = (os.environ.get("TUTOR_DISPLAY_NAME") or "").strip() or None
         TIMEZONE = (os.environ.get("TIMEZONE") or "").strip() or None
+        SUBSCRIPTION_CHANNEL_ID = os.environ.get("SUBSCRIPTION_CHANNEL_ID") or None
+        SUBSCRIPTION_CHANNEL_LINK = (os.environ.get("SUBSCRIPTION_CHANNEL_LINK") or "").strip() or None
         YANDEX_API_KEY = _yandex_key
         YANDEX_FOLDER_ID = _yandex_folder
 

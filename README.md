@@ -48,7 +48,7 @@ Telegram-бот, через который ученики записываютс
    В `config.py` укажи:
    - `BOT_TOKEN` — токен от BotFather
    - `ADMIN_USER_ID` и `TUTOR_USER_ID` (или `TUTOR_USER_IDS`) — твой ID
-   - при необходимости: `BOT_TITLE`, `MATERIALS_CHANNEL_LINK`, `SUMMARY_DAILY_HOUR`, `LESSON_LINK`, `EGE_AUTHOR_TG`, `TIMEZONE`, `YANDEX_API_KEY`, `YANDEX_FOLDER_ID` (для помощи с домашкой)
+   - при необходимости: `BOT_TITLE`, `MATERIALS_CHANNEL_LINK`, `SUMMARY_DAILY_HOUR`, `LESSON_LINK`, `EGE_AUTHOR_TG`, `TIMEZONE`, `SUBSCRIPTION_CHANNEL_ID` + `SUBSCRIPTION_CHANNEL_LINK` (обязательная подписка), `YANDEX_API_KEY`, `YANDEX_FOLDER_ID` (для помощи с домашкой)
 
 5. Запуск:
    ```bash

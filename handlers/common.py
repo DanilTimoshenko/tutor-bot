@@ -102,6 +102,65 @@ def is_admin(user_id: int, bot_data) -> bool:
     return user_id == bot_data.get("admin_user_id")
 
 
+async def subscription_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Проверяет подписку на канал. Если SUBSCRIPTION_CHANNEL_ID задан и пользователь не подписан —
+    показывает сообщение и блокирует доступ. Репетиторы и админ не проверяются.
+    Вызывать из TypeHandler с group=-1. При блокировке выбрасывает ApplicationHandlerStop.
+    """
+    from telegram.ext import ApplicationHandlerStop
+    from config_loader import config
+
+    channel_id = getattr(config, "SUBSCRIPTION_CHANNEL_ID", None)
+    if not channel_id:
+        return
+    try:
+        channel_id = int(channel_id)
+    except (TypeError, ValueError):
+        return
+
+    user = update.effective_user
+    if not user:
+        return
+    user_id = user.id
+    if is_tutor(user_id, context.bot_data) or is_admin(user_id, context.bot_data):
+        return
+
+    try:
+        member = await context.bot.get_chat_member(chat_id=channel_id, user_id=user_id)
+        if member.status in ("creator", "administrator", "member"):
+            return
+    except Exception as e:
+        logger.warning("subscription_check get_chat_member failed: %s", e)
+        return  # при ошибке не блокируем
+
+    link = (getattr(config, "SUBSCRIPTION_CHANNEL_LINK", None) or "").strip()
+    if not link:
+        try:
+            chat = await context.bot.get_chat(channel_id)
+            if chat.username:
+                link = f"https://t.me/{chat.username}"
+        except Exception:
+            link = f"https://t.me/c/{str(channel_id).replace('-100', '')}"
+    msg = "📢 Чтобы пользоваться ботом, подпишись на канал:"
+    keyboard = [[InlineKeyboardButton("✅ Подписаться", url=link)]]
+    if update.callback_query:
+        try:
+            await update.callback_query.answer()
+        except Exception:
+            pass
+        try:
+            await update.effective_message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard))
+        except Exception:
+            pass
+    else:
+        try:
+            await update.effective_message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard))
+        except Exception:
+            pass
+    raise ApplicationHandlerStop
+
+
 def _build_main_menu_content(
     user_id: int, first_name: str | None, bot_data: dict, user_data: dict | None = None
 ) -> tuple[str, list]:

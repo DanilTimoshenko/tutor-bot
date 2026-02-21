@@ -42,12 +42,23 @@ daily_summary_callback = tutor.daily_summary_callback
 send_lesson_links_callback = tutor.send_lesson_links_callback
 
 add_tutor_receive = admin.add_tutor_receive
+subscription_check = common.subscription_check
 
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     data = query.data or ""
     user_id = query.from_user.id
+
+    # Защита от двойных нажатий: один callback_data + message_id обрабатываем только раз
+    unique_cbq = data + "_" + (str(query.message.message_id) if query.message else "")
+    if context.user_data.get("last_cbq") == unique_cbq:
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        return
+    context.user_data["last_cbq"] = unique_cbq
 
     try:
         await query.answer()

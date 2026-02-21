@@ -5,9 +5,9 @@ Telegram-бот для записи учеников на уроки репет�
 import logging
 from datetime import time as dt_time
 
-from telegram import BotCommand
+from telegram import BotCommand, Update
 from telegram.error import Conflict
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, TypeHandler, filters
 
 from config_loader import config
 import database as db
@@ -65,6 +65,11 @@ def main() -> None:
     app.bot_data["lesson_link"] = (getattr(config, "LESSON_LINK", None) or "").strip() or None
     app.bot_data["ege_author_tg"] = (getattr(config, "EGE_AUTHOR_TG", None) or "").strip() or None
     app.bot_data["tutor_display_name"] = (getattr(config, "TUTOR_DISPLAY_NAME", None) or "").strip() or "Репетитор"
+
+    # Проверка подписки на канал (group=-1: выполняется первым)
+    sub_channel = getattr(config, "SUBSCRIPTION_CHANNEL_ID", None)
+    if sub_channel:
+        app.add_handler(TypeHandler(Update, h.subscription_check), group=-1)
 
     app.add_handler(CommandHandler("start", h.start))
     app.add_handler(CommandHandler("help", h.help_cmd))
