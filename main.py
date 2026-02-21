@@ -118,7 +118,7 @@ def main() -> None:
         except Exception:
             logger.exception("Не удалось отправить ответ пользователю")
 
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+    app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & ~filters.COMMAND, text_handler))
 
     async def on_error(update, context):
         error = context.error

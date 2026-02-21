@@ -1,12 +1,14 @@
 """
-Помощь с домашкой: Yandex GPT API.
+Помощь с домашкой: Yandex GPT API + Yandex Vision OCR для фото.
 Нужны YANDEX_API_KEY и YANDEX_FOLDER_ID (каталог в Yandex Cloud).
 """
+import base64
 import logging
 
 logger = logging.getLogger(__name__)
 
 YANDEX_COMPLETION_URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
+YANDEX_VISION_URL = "https://vision.api.cloud.yandex.net/vision/v1/batchAnalyze"
 
 SYSTEM_PROMPT = (
     "Ты помощник по учёбе для школьников и студентов. "
@@ -27,7 +29,57 @@ SYSTEM_PROMPT = (
 )
 
 
-async def ask_homework(user_text: str, api_key: str, folder_id: str = "") -> str | None:
+async def _ocr_image(image_bytes: bytes, api_key: str) -> str | None:
+    """Извлекает текст с изображения через Yandex Vision OCR. Возвращает None при ошибке."""
+    api_key = (api_key or "").strip()
+    if not api_key:
+        return None
+    payload = {
+        "analyze_specs": [{
+            "content": base64.b64encode(image_bytes).decode("ascii"),
+            "features": [{
+                "type": "TEXT_DETECTION",
+                "text_detection_config": {"language_codes": ["ru", "en"]},
+            }],
+        }],
+    }
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                YANDEX_VISION_URL,
+                json=payload,
+                headers={"Authorization": f"Api-Key {api_key}", "Content-Type": "application/json"},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status != 200:
+                    logger.warning("Yandex Vision OCR: status=%s", resp.status)
+                    return None
+                data = await resp.json()
+    except Exception as e:
+        logger.warning("Yandex Vision OCR failed: %s", e)
+        return None
+    try:
+        results = data.get("results", [])
+        if not results or not results[0].get("results"):
+            return None
+        inner = results[0]["results"][0]
+        text_det = inner.get("textDetection", {})
+        pages = text_det.get("pages", [])
+        lines = []
+        for page in pages:
+            for block in page.get("blocks", []):
+                for line in block.get("lines", []):
+                    words = [w.get("text", "") for w in line.get("words", [])]
+                    if words:
+                        lines.append(" ".join(words))
+        return "\n".join(lines).strip() if lines else None
+    except (KeyError, IndexError, TypeError) as e:
+        logger.warning("Yandex Vision: неожиданная структура ответа: %s", e)
+        return None
+
+
+async def ask_homework(user_text: str, api_key: str, folder_id: str = "", image_bytes: bytes | None = None) -> str | None:
     """
     Отправляет вопрос в Yandex GPT, возвращает ответ или None при ошибке/отсутствии ключа.
     """
@@ -38,6 +90,15 @@ async def ask_homework(user_text: str, api_key: str, folder_id: str = "") -> str
             "Yandex GPT: запрос пропущен — не заданы YANDEX_API_KEY или YANDEX_FOLDER_ID в Variables."
         )
         return None
+    # Если есть фото — сначала OCR, затем объединяем с текстом
+    if image_bytes:
+        ocr_text = await _ocr_image(image_bytes, api_key)
+        if ocr_text:
+            user_text = f"Текст с фото задания:\n{ocr_text}\n\n" + (user_text.strip() or "Помоги решить это задание.")
+        elif user_text.strip():
+            user_text = user_text.strip()
+        else:
+            return None
     if len(user_text.strip()) < 2:
         return None
     model_uri = f"gpt://{folder_id}/yandexgpt/latest"

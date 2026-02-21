@@ -147,15 +147,26 @@ async def my_bookings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def homework_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if not context.user_data.get("homework_help"):
         return False
-    text = (update.message.text or "").strip()
-    if len(text) < 2:
-        await update.message.reply_text("Напиши вопрос или задание текстом (хотя бы пару слов).")
+    text = (update.message.text or update.message.caption or "").strip()
+    photo = update.message.photo
+    image_bytes = None
+    if photo:
+        try:
+            largest = photo[-1]
+            tg_file = await context.bot.get_file(largest.file_id)
+            image_bytes = bytes(await tg_file.download_as_bytearray())
+        except Exception as e:
+            logger.warning("homework_receive: failed to download photo: %s", e)
+            await update.message.reply_text("Не удалось загрузить фото. Попробуй ещё раз или напиши текстом.")
+            return True
+    if not image_bytes and len(text) < 2:
+        await update.message.reply_text("Напиши вопрос или задание текстом, либо пришли фото с заданием.")
         return True
     api_key = context.bot_data.get("yandex_api_key") or ""
     folder_id = context.bot_data.get("yandex_folder_id") or ""
     try:
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-        reply = await homework_llm.ask_homework(text, api_key, folder_id)
+        reply = await homework_llm.ask_homework(text, api_key, folder_id, image_bytes=image_bytes)
     except Exception as e:
         logger.exception("homework_receive: %s", e)
         await update.message.reply_text("Произошла ошибка при запросе. Попробуй ещё раз или /start.")
@@ -296,7 +307,7 @@ async def handle_callback(query, context: ContextTypes.DEFAULT_TYPE, data: str, 
         context.user_data["homework_help"] = True
         await query.edit_message_text(
             "AITimoshenko'sAtelie\n\n"
-            "Напиши вопрос или задание — постараюсь объяснить и подсказать ход решения.\n\n"
+            "Напиши вопрос или пришли фото с заданием — постараюсь объяснить и подсказать ход решения.\n\n"
             "Для выхода нажми кнопку ниже или /start.",
             reply_markup=InlineKeyboardMarkup(KEYBOARD_BACK_TO_MAIN),
         )
