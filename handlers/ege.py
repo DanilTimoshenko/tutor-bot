@@ -28,18 +28,50 @@ async def handle_callback(query, context, data: str, user_id: int) -> bool:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
         return True
 
-    # Математика: меню с кнопкой «Случайное задание»
+    # Математика: меню — случайное или по номеру (1–19)
     if data == "ege_math":
         text = (
             "📐 ЕГЭ — Математика\n\n"
-            "19 заданий. Нажми кнопку — получи случайное задание. Решение откроется по нажатию «Показать решение»."
+            "Выбери номер задания (1–19) или нажми «Случайное задание». Решение — по кнопке «Показать решение»."
         )
-        keyboard = [
-            [InlineKeyboardButton("🎲 Случайное задание", callback_data="ege_math_random")],
-            [InlineKeyboardButton("📚 К разделу ЕГЭ", callback_data="ege_menu")],
-        ]
+        keyboard = [[InlineKeyboardButton("🎲 Случайное задание", callback_data="ege_math_random")]]
+        for row_start in range(1, 20, 5):
+            row = [
+                InlineKeyboardButton(str(i), callback_data=f"ege_math_task_{i}")
+                for i in range(row_start, min(row_start + 5, 20))
+            ]
+            keyboard.append(row)
+        keyboard.append([InlineKeyboardButton("📚 К разделу ЕГЭ", callback_data="ege_menu")])
         keyboard.extend(KEYBOARD_BACK_TO_MAIN)
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        return True
+
+    # Задание по конкретному номеру (1–19)
+    if data.startswith("ege_math_task_"):
+        try:
+            num = int(data.replace("ege_math_task_", ""))
+        except ValueError:
+            num = 0
+        if not (1 <= num <= 19):
+            await query.answer("Некорректный номер.")
+            return True
+        task = await db.get_ege_math_task(num)
+        if not task or not (task.get("task_text") or "").strip():
+            await query.answer("Задание с этим номером пока не добавлено.", show_alert=True)
+            return True
+        task_text = (task.get("task_text") or "").strip()
+        if len(task_text) > 4000:
+            task_text = task_text[:3990] + "\n\n… (текст обрезан)"
+        keyboard = [
+            [InlineKeyboardButton("✅ Показать решение", callback_data=f"ege_math_show_{num}")],
+            [InlineKeyboardButton("🎲 Случайное задание", callback_data="ege_math_random")],
+            [InlineKeyboardButton("📐 К математике", callback_data="ege_math")],
+        ]
+        keyboard.extend(KEYBOARD_BACK_TO_MAIN)
+        await query.edit_message_text(
+            f"📐 Задание {num}\n\n{task_text}",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
         return True
 
     # Случайное задание по математике
