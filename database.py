@@ -5,6 +5,8 @@
 import os
 import aiosqlite
 from datetime import datetime
+
+from config_loader import now_tz
 from pathlib import Path
 
 _db_path = os.environ.get("DATABASE_PATH", "").strip()
@@ -214,8 +216,8 @@ async def get_lessons_at(lesson_date: str, lesson_time: str):
 
 async def get_upcoming_lessons(limit: int = 50):
     """Список предстоящих уроков (дата >= сегодня), отсортированных по дате и времени.
-    Используется локальная дата сервера, чтобы ученики видели уроки по календарному дню."""
-    today = datetime.now().strftime("%Y-%m-%d")
+    Используется дата в настроенном часовом поясе (TIMEZONE) или локальная."""
+    today = now_tz().strftime("%Y-%m-%d")
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
@@ -417,7 +419,7 @@ async def cancel_booking(lesson_id: int, user_id: int) -> tuple[bool, str]:
 
 async def get_my_bookings(user_id: int):
     """Уроки, на которые записан пользователь (предстоящие)."""
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = now_tz().strftime("%Y-%m-%d")
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(

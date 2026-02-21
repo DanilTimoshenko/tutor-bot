@@ -37,3 +37,6 @@ YANDEX_FOLDER_ID = None
 
 # Тег в Telegram для раздела ЕГЭ (показывается вместо ссылки на источник). Например: "@YourNick"
 EGE_AUTHOR_TG = None
+
+# Часовой пояс для дат (расписание, «сегодня», уроки). Например: "Europe/Moscow". None — локальное время сервера
+TIMEZONE = None

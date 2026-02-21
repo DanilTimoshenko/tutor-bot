@@ -8,6 +8,7 @@ from telegram.ext import ContextTypes
 
 import database as db
 
+from config_loader import now_tz, localize_naive
 from .common import (
     KEYBOARD_BACK_TO_MAIN,
     _clear_other_flows,
@@ -47,8 +48,9 @@ async def summary_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if not is_tutor(update.effective_user.id, context.bot_data):
         await update.message.reply_text(MSG_ONLY_TUTOR)
         return
-    today = datetime.now().strftime("%Y-%m-%d")
-    today_weekday = datetime.now().weekday()
+    now = now_tz()
+    today = now.strftime("%Y-%m-%d")
+    today_weekday = now.weekday()
     lessons = await db.get_lessons_on_date(today)
     all_blocked = await db.get_all_blocked_slots()
     blocked_today = [b for b in all_blocked if b["day_of_week"] == today_weekday]
@@ -61,8 +63,9 @@ async def summary_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 async def daily_summary_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
-    today = datetime.now().strftime("%Y-%m-%d")
-    today_weekday = datetime.now().weekday()
+    now = now_tz()
+    today = now.strftime("%Y-%m-%d")
+    today_weekday = now.weekday()
     lessons = await db.get_lessons_on_date(today)
     all_blocked = await db.get_all_blocked_slots()
     blocked_today = [b for b in all_blocked if b["day_of_week"] == today_weekday]
@@ -94,7 +97,7 @@ def _normalize_slot_time(s: str) -> str:
 
 async def send_lesson_links_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     global_link = (context.bot_data.get("lesson_link") or "").strip()
-    now = datetime.now()
+    now = now_tz()
     target = now + timedelta(minutes=1)
     target_date = target.strftime("%Y-%m-%d")
     target_time = target.strftime("%H:%M")
@@ -138,19 +141,21 @@ async def _schedule_reminders(context: ContextTypes.DEFAULT_TYPE, lesson_id: int
         dt = datetime.strptime(f"{lesson['lesson_date']} {lesson['lesson_time']}", "%Y-%m-%d %H:%M")
     except ValueError:
         return
+    dt = localize_naive(dt)
     job_queue = context.application.job_queue
     if not job_queue:
         return
     when_1d = dt - timedelta(days=1)
     when_1h = dt - timedelta(hours=1)
-    if when_1d > datetime.now():
+    now = now_tz()
+    if when_1d > now:
         job_queue.run_once(
             _reminder_callback,
             when_1d,
             data={"lesson_id": lesson_id, "kind": "1day"},
             name=f"remind_1d_{lesson_id}",
         )
-    if when_1h > datetime.now():
+    if when_1h > now:
         job_queue.run_once(
             _reminder_callback,
             when_1h,
@@ -384,8 +389,9 @@ async def handle_callback(query, context: ContextTypes.DEFAULT_TYPE, data: str, 
         if not is_tutor(user_id, context.bot_data):
             await query.edit_message_text(MSG_ONLY_TUTOR)
             return True
-        today = datetime.now().strftime("%Y-%m-%d")
-        today_weekday = datetime.now().weekday()
+        now = now_tz()
+        today = now.strftime("%Y-%m-%d")
+        today_weekday = now.weekday()
         lessons = await db.get_lessons_on_date(today)
         all_blocked = await db.get_all_blocked_slots()
         blocked_today = [b for b in all_blocked if b["day_of_week"] == today_weekday]

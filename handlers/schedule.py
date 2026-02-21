@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes
 
 import database as db
 
+from config_loader import now_tz
 from .common import (
     FLOW_KEYS,
     KEYBOARD_BACK_TO_MAIN,
@@ -54,8 +55,9 @@ async def _build_schedule_message(context: ContextTypes.DEFAULT_TYPE):
     """Возвращает (text, keyboard) для экрана расписания."""
     user_data = (getattr(context, "user_data", None) or {}) if context else {}
     range_dates = user_data.get("schedule_range")
-    today = datetime.now().strftime("%Y-%m-%d")
-    to_7 = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+    now = now_tz()
+    today = now.strftime("%Y-%m-%d")
+    to_7 = (now + timedelta(days=7)).strftime("%Y-%m-%d")
     if range_dates:
         from_date, to_date = range_dates
         lessons = await db.get_lessons_in_range(from_date, to_date)
